@@ -57,8 +57,7 @@ public class Parque {
      * Es la misma función de hash que se usa en muchos shaders: sin estado, sin Random, siempre igual.
      */
     public static float variacion(int fila, int columna, int indice, int semilla) {
-        double n = Math.sin(fila * 12.9898 + columna * 78.233 + indice * 37.719 + semilla * 4.581) * 43758.5453; // Mezcla los datos.
-        return (float) (n - Math.floor(n)); // Se queda con la parte decimal: entre 0 y 1.
+        return Variacion.valor(fila, columna, indice, semilla); // El hash vive en Variacion, compartido con Fachada.
     }
 
     /** Número entero entre minimo y maximo (incluidos) elegido con variacion(). */

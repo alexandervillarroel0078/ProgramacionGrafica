@@ -10,7 +10,8 @@ import java.util.List; // Tipo de la lista de ubicaciones.
 /**
  * DECORACION: detalles urbanos de la ciudad terminada.
  * Responsable de: decidir qué decoración corresponde a cada parcela del Mapa y dibujar parques (delegados en Parque:
- * senderos, fuente, árboles y bancos), ventanas iluminadas y pasos peatonales; delega en Senalizacion los semáforos, PARE y carteles.
+ * senderos, fuente, árboles y bancos), fachadas de los edificios (delegadas en Fachada: planta baja comercial y
+ * ventanas según día/noche) y pasos peatonales; delega en Senalizacion los semáforos, PARE y carteles.
  * Se comunica con: Mapa (celdas, intersecciones y parques), Cubo y Shader (dibujo y emisión), Senalizacion (señales y
  * cruces con semáforo) y Ciudad (que corta la línea amarilla con hayPasoSobre()).
  * Juego la dibuja solo en la vista principal; en el minimapa se omite, y le pasa el estado de noche de
@@ -39,17 +40,17 @@ public class Decoracion {
     // 0 si va de norte a sur (franjas a lo largo de Z). Se genera desde INTERSECCIONES_SEMAFORO y la lista de parques.
     public static final List<float[]> UBICACIONES_PASOS = Collections.unmodifiableList(calcularUbicaciones());
 
-    private final Shader shader; // Programa que recibe el interruptor de emisión.
     private final Cubo cubo; // Geometría con la que se construyen los detalles.
     private final Senalizacion senalizacion; // Dibuja semáforos, PARE y carteles de sector.
     private final Parque parque; // Dibuja senderos, fuente, árboles y bancos de cada parque.
+    private final Fachada fachada; // Dibuja puertas, vidrieras, toldos y ventanas de los edificios.
 
     /** Recibe el shader, el cubo y las figuras compartidas, y prepara la señalización y los parques. */
     public Decoracion(Shader shader, Cubo cubo, Figuras figuras) {
-        this.shader = shader; // Guarda el programa para cambiar uEmision.
         this.cubo = cubo; // Guarda la geometría compartida.
         this.senalizacion = new Senalizacion(shader, cubo); // Un mismo objeto dibuja todas las señales.
         this.parque = new Parque(shader, cubo, figuras); // Calcula una vez la disposición de todos los parques.
+        this.fachada = new Fachada(shader, cubo); // Un mismo objeto dibuja las fachadas de todos los edificios.
     }
 
     // ==================== UBICACIÓN DE LOS PASOS PEATONALES ====================
@@ -130,7 +131,7 @@ public class Decoracion {
                 }
                 if (tipo == Mapa.EDIFICIO) { // Detecta una parcela con edificio.
                     float altura = Mapa.alturaEdificio(fila, columna); // Recupera la misma altura calculada en Ciudad.
-                    dibujarVentanas(x, z, altura, noche); // Coloca ventanas en sus cuatro fachadas.
+                    fachada.dibujar(fila, columna, x, z, altura, noche); // Planta baja comercial y ventanas (vidrio de día, variadas de noche).
                 }
             }
         }
@@ -138,23 +139,6 @@ public class Decoracion {
         for (float[] paso : UBICACIONES_PASOS) { // Los pasos se dibujan una vez cada uno, desde la lista.
             dibujarPasoPeatonal(paso[0], paso[1], paso[2] == 1); // Añade el cruce pintado de vereda a vereda.
         }
-    }
-
-    /** Distribuye ventanas por pisos en las cuatro paredes del edificio. */
-    private void dibujarVentanas(float x, float z, float altura, boolean noche) {
-        if (noche) { // Las ventanas simulan habitaciones encendidas en el ambiente nocturno.
-            shader.entero("uEmision", 1); // Permite ver el color de las ventanas sin depender de farolas.
-        }
-        float fachada = Mapa.ANCHO_EDIFICIO / 2 + 0.01f; // Separa la ventana 0.01 de la pared (3.51) para que no parpadee.
-        for (float y = 1.7f; y < altura; y += 2) { // Recorre los pisos separados por dos unidades de altura.
-            for (float desplazamiento = -2; desplazamiento <= 2; desplazamiento += 2) { // Coloca tres ventanas por fachada.
-                cubo.caja(x + desplazamiento, y, z - fachada, 0.8f, 0.9f, 0.04f, 0.95f, 0.75f, 0.38f); // Ventana de la fachada norte.
-                cubo.caja(x + desplazamiento, y, z + fachada, 0.8f, 0.9f, 0.04f, 0.95f, 0.75f, 0.38f); // Ventana de la fachada sur.
-                cubo.caja(x - fachada, y, z + desplazamiento, 0.04f, 0.9f, 0.8f, 0.95f, 0.75f, 0.38f); // Ventana de la fachada oeste.
-                cubo.caja(x + fachada, y, z + desplazamiento, 0.04f, 0.9f, 0.8f, 0.95f, 0.75f, 0.38f); // Ventana de la fachada este.
-            }
-        }
-        shader.entero("uEmision", 0); // Restablece la iluminación normal de los demás elementos.
     }
 
     /** Dibuja las franjas blancas de un paso: paralelas al sentido de circulación y repartidas a lo ancho de la calle. */
