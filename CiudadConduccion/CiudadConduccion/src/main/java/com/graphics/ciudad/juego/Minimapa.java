@@ -1,0 +1,102 @@
+package com.graphics.ciudad.juego; // Agrupa las reglas de la partida y el minimapa.
+
+import com.graphics.ciudad.motor.Cubo; // Dibuja el indicador del auto.
+import com.graphics.ciudad.motor.Shader; // Cambia la proyección del shader con uMapa.
+import com.graphics.ciudad.mundo.Mapa; // Aporta el límite de la ciudad para encuadrar el minimapa.
+import com.graphics.ciudad.vehiculo.Auto; // Aporta posición y orientación del indicador.
+import static org.lwjgl.glfw.GLFW.*; // Permite consultar la tecla que controla el minimapa.
+import static org.lwjgl.opengl.GL33.*; // Permite cambiar viewport, recorte y buffers de dibujo.
+
+/**
+ * MINIMAPA: segundo pase de dibujo, visto desde arriba en un recuadro.
+ * Responsable de: mostrar u ocultar el mapa (M), reservar el recuadro con glScissor y glViewport, activar la
+ * proyección ortográfica (uMapa = 1), pedir a Juego que dibuje otra vez la escena, dibujar el indicador del auto
+ * y restaurar viewport, scissor y uMapa al terminar. El minimapa mantiene el norte (-Z) arriba.
+ * Se comunica con: Shader (uMapa), Cubo (indicador), Auto (posición y ángulo) y Juego, que le pasa la escena como
+ * Runnable y consulta enVistaMapa() para omitir detalles pequeños. El destino activo lo dibuja Entregas dentro de
+ * la escena (cuadrado dorado elevado). Al redimensionar, recibe el tamaño actual del framebuffer en cada cuadro:
+ * el recuadro sigue en la esquina superior derecha con hasta 260 px de lado, y la vista principal no se altera.
+ */
+public class Minimapa {
+
+    private final Shader shader; // Programa cuyo modo de proyección se cambia.
+    private final Cubo cubo; // Geometría con la que se dibuja el indicador.
+    private boolean mostrarMapa = true; // Muestra el minimapa desde el inicio.
+    private boolean vistaMapa = false; // Minimapa lo activa mientras dibuja la vista superior.
+    private static final int TAMANO_MAX_MINIMAPA = 260; // Lado máximo del recuadro, en píxeles del framebuffer.
+    private static final int FRACCION_MINIMAPA = 3; // En ventanas pequeñas el lado se limita a 1/3 de la dimensión menor.
+    private static final int MARGEN_MINIMAPA = 18; // Separación máxima entre el recuadro y los bordes de la ventana, en píxeles.
+    private static final int FRACCION_MARGEN = 20; // En ventanas pequeñas el margen se limita a 1/20 de la dimensión menor.
+    private static final int BORDE_MINIMAPA = 3; // Grosor del marco claro alrededor del mapa, en píxeles.
+    private static final float ESCALA_INDICADOR = 1.5f; // Agranda el indicador del auto: la ciudad 11 × 11 ocupa más espacio en el recuadro.
+    private static final float MARGEN_MAPA = 2; // Unidades de mundo que se dejan alrededor de la ciudad dentro del recuadro.
+
+    /** Recibe el shader y el cubo compartidos. */
+    public Minimapa(Shader shader, Cubo cubo) {
+        this.shader = shader; // Guarda el programa para cambiar uMapa.
+        this.cubo = cubo; // Guarda la geometría compartida.
+    }
+
+    /** Añade el interruptor del minimapa a los controles de Juego. */
+    public void tecla(int key) {
+        if (key == GLFW_KEY_M) { // Comprueba si se pulsó la tecla del mapa.
+            mostrarMapa = !mostrarMapa; // Alterna entre mostrar y ocultar la vista superior.
+        }
+    }
+
+    /** Indica si se está dibujando el segundo pase; Juego omite entonces la decoración y la baliza. */
+    public boolean enVistaMapa() {
+        return vistaMapa; // true solo durante dibujar().
+    }
+
+    // ==================== MINIMAPA: SEGUNDO PASE DE DIBUJO ====================
+
+    /** Dibuja la misma ciudad desde arriba, en un recuadro; Juego ya dibujó antes la escena principal. */
+    public void dibujar(int ancho, int alto, Auto auto, Runnable escena) {
+        if (!mostrarMapa) { // Comprueba si el usuario ocultó el minimapa con M.
+            return; // Conserva únicamente la imagen principal.
+        }
+        int dimensionMenor = Math.min(ancho, alto); // Busca la dimensión que limita el espacio disponible.
+        int lado = Math.min(TAMANO_MAX_MINIMAPA, dimensionMenor / FRACCION_MINIMAPA); // Limita el mapa a 260 píxeles y a un tercio de la ventana.
+        int margen = Math.min(MARGEN_MINIMAPA, dimensionMenor / FRACCION_MARGEN); // Calcula una separación adaptable respecto a los bordes.
+        int x = ancho - lado - margen; // Ubica el recuadro cerca del borde derecho.
+        int y = alto - lado - margen; // Ubica el recuadro arriba; OpenGL mide Y desde abajo.
+        glEnable(GL_SCISSOR_TEST); // Activa el recorte para no borrar el resto de la escena.
+        glScissor(x - BORDE_MINIMAPA, y - BORDE_MINIMAPA, lado + 2 * BORDE_MINIMAPA, lado + 2 * BORDE_MINIMAPA); // Selecciona el mapa más un borde de tres píxeles.
+        glClearColor(0.8f, 0.87f, 0.94f, 1); // Define un color claro para el marco.
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Borra solo el recuadro exterior gracias al scissor.
+        glScissor(x, y, lado, lado); // Reduce el recorte al interior del minimapa.
+        glClearColor(0.06f, 0.10f, 0.15f, 1); // Define el fondo oscuro del mapa.
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Limpia color y profundidad dentro del mapa.
+        glViewport(x, y, lado, lado); // Redirige la proyección al recuadro cuadrado.
+        shader.entero("uMapa", 1); // Selecciona la proyección ortográfica del shader ciudad.vert.
+        shader.decimal("uMitadMapa", Mapa.LIMITE + MARGEN_MAPA); // Encuadra la ciudad completa, sea cual sea el tamaño de MAPA.
+        vistaMapa = true; // Indica a Juego.escena() que omita decoración pequeña y baliza flotante.
+        try { // Asegura que el estado de dibujo se restaure incluso si el segundo pase falla.
+            escena.run(); // Dibuja otra vez la misma ciudad, ahora vista desde arriba.
+            dibujarIndicadorAuto(auto); // Resalta la posición y el frente del jugador en el mapa.
+        } finally { // El siguiente cuadro debe volver a la configuración de pantalla completa.
+            vistaMapa = false; // Reactiva los detalles de la escena principal.
+            shader.entero("uMapa", 0); // Recupera la proyección en perspectiva.
+            glDisable(GL_SCISSOR_TEST); // Permite que la próxima limpieza abarque toda la pantalla.
+            glViewport(0, 0, ancho, alto); // Recupera el área de dibujo de la ventana completa.
+        }
+        if (glGetError() != GL_NO_ERROR) { // Comprueba que el pase del mapa no haya generado errores OpenGL.
+            throw new IllegalStateException("Error OpenGL en minimapa"); // Expone el error en la consola.
+        }
+    }
+
+    /** Dibuja una marca cian y una punta blanca por encima de los edificios del minimapa. */
+    private void dibujarIndicadorAuto(Auto auto) {
+        float autoX = auto.getX(); // Lee la posición X del vehículo.
+        float autoZ = auto.getZ(); // Lee la posición Z del vehículo.
+        float angulo = auto.getAngulo(); // Lee la orientación del vehículo.
+        float e = ESCALA_INDICADOR; // Nombre corto para multiplicar los tamaños del indicador.
+        cubo.cajaGirada(autoX, 25, autoZ, 2.2f * e, 0.1f, 3.2f * e, 0.1f, 1, 1, angulo); // Marca la posición con un rectángulo cian orientado.
+        float frenteX = -(float) Math.sin(angulo); // Calcula la dirección frontal en el eje X.
+        float frenteZ = -(float) Math.cos(angulo); // Calcula la dirección frontal en el eje Z.
+        float puntaX = autoX + frenteX * 2 * e; // Desplaza la punta hacia delante en X (dos unidades por la escala).
+        float puntaZ = autoZ + frenteZ * 2 * e; // Desplaza la punta hacia delante en Z (dos unidades por la escala).
+        cubo.caja(puntaX, 26, puntaZ, 0.9f * e, 0.1f, 0.9f * e, 1, 1, 1); // Dibuja la punta blanca encima del indicador cian.
+    }
+}

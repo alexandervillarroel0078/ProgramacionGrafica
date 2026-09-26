@@ -1,0 +1,6 @@
+target/
+__MACOSX/
+.DS_Store
+~/
+.idea/
+.vscode/
