@@ -13,7 +13,8 @@ import static org.lwjgl.opengl.GL33.*; // Permite cambiar viewport, recorte y bu
  * proyección ortográfica (uMapa = 1), pedir a Juego que dibuje otra vez la escena, dibujar el indicador del auto
  * y restaurar viewport, scissor y uMapa al terminar. El minimapa mantiene el norte (-Z) arriba.
  * Se comunica con: Shader (uMapa), Cubo (indicador), Auto (posición y ángulo) y Juego, que le pasa la escena como
- * Runnable y consulta enVistaMapa() para omitir detalles pequeños. El destino activo lo dibuja Entregas dentro de
+ * Runnable y consulta enVistaMapa() para omitir detalles pequeños. También marca las divisiones de los sectores de
+ * Mapa y ofrece aPantalla() para que el HUD escriba sus nombres encima del recuadro. El destino activo lo dibuja Entregas dentro de
  * la escena (cuadrado dorado elevado). Al redimensionar, recibe el tamaño actual del framebuffer en cada cuadro:
  * el recuadro sigue en la esquina superior derecha con hasta 260 px de lado, y la vista principal no se altera.
  */
@@ -30,6 +31,11 @@ public class Minimapa {
     private static final int BORDE_MINIMAPA = 3; // Grosor del marco claro alrededor del mapa, en píxeles.
     private static final float ESCALA_INDICADOR = 1.5f; // Agranda el indicador del auto: la ciudad 11 × 11 ocupa más espacio en el recuadro.
     private static final float MARGEN_MAPA = 2; // Unidades de mundo que se dejan alrededor de la ciudad dentro del recuadro.
+    private static final float GROSOR_DIVISION = 0.7f; // Ancho, en unidades de mundo, de las líneas que separan los sectores.
+    private static final float ALTURA_DIVISION = 22; // Altura de esas líneas: por encima de los edificios, debajo del auto y el destino.
+    private int recuadroX; // Último recuadro dibujado: X de su esquina inferior izquierda, en píxeles (OpenGL).
+    private int recuadroY; // Y de su esquina inferior izquierda, en píxeles medidos desde abajo.
+    private int recuadroLado; // Lado del recuadro en píxeles; 0 si el minimapa no se dibujó.
 
     /** Recibe el shader y el cubo compartidos. */
     public Minimapa(Shader shader, Cubo cubo) {
@@ -53,6 +59,7 @@ public class Minimapa {
 
     /** Dibuja la misma ciudad desde arriba, en un recuadro; Juego ya dibujó antes la escena principal. */
     public void dibujar(int ancho, int alto, Auto auto, Runnable escena) {
+        recuadroLado = 0; // Hasta dibujarlo, no hay recuadro visible (así el HUD no escribe nombres si está oculto).
         if (!mostrarMapa) { // Comprueba si el usuario ocultó el minimapa con M.
             return; // Conserva únicamente la imagen principal.
         }
@@ -69,11 +76,15 @@ public class Minimapa {
         glClearColor(0.06f, 0.10f, 0.15f, 1); // Define el fondo oscuro del mapa.
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Limpia color y profundidad dentro del mapa.
         glViewport(x, y, lado, lado); // Redirige la proyección al recuadro cuadrado.
+        recuadroX = x; // Recuerda dónde quedó el recuadro para ubicar después los nombres de los sectores.
+        recuadroY = y; // Esquina inferior del recuadro.
+        recuadroLado = lado; // Tamaño del recuadro.
         shader.entero("uMapa", 1); // Selecciona la proyección ortográfica del shader ciudad.vert.
         shader.decimal("uMitadMapa", Mapa.LIMITE + MARGEN_MAPA); // Encuadra la ciudad completa, sea cual sea el tamaño de MAPA.
         vistaMapa = true; // Indica a Juego.escena() que omita decoración pequeña y baliza flotante.
         try { // Asegura que el estado de dibujo se restaure incluso si el segundo pase falla.
             escena.run(); // Dibuja otra vez la misma ciudad, ahora vista desde arriba.
+            dibujarDivisionesSectores(); // Marca los límites de los sectores con nombre definidos en Mapa.
             dibujarIndicadorAuto(auto); // Resalta la posición y el frente del jugador en el mapa.
         } finally { // El siguiente cuadro debe volver a la configuración de pantalla completa.
             vistaMapa = false; // Reactiva los detalles de la escena principal.
@@ -84,6 +95,37 @@ public class Minimapa {
         if (glGetError() != GL_NO_ERROR) { // Comprueba que el pase del mapa no haya generado errores OpenGL.
             throw new IllegalStateException("Error OpenGL en minimapa"); // Expone el error en la consola.
         }
+    }
+
+    /** Dibuja el contorno de cada sector de Mapa.SECTORES con líneas finas y claras. */
+    private void dibujarDivisionesSectores() {
+        for (float[] r : Mapa.SECTORES) { // Cada sector es un rectángulo {xMin, xMax, zMin, zMax}.
+            float centroX = (r[0] + r[1]) / 2; // Centro horizontal del rectángulo.
+            float centroZ = (r[2] + r[3]) / 2; // Centro en profundidad del rectángulo.
+            float ancho = r[1] - r[0]; // Ancho del rectángulo en X.
+            float profundo = r[3] - r[2]; // Largo del rectángulo en Z.
+            cubo.caja(centroX, ALTURA_DIVISION, r[2], ancho, 0.1f, GROSOR_DIVISION, 0.9f, 0.9f, 0.6f); // Borde norte.
+            cubo.caja(centroX, ALTURA_DIVISION, r[3], ancho, 0.1f, GROSOR_DIVISION, 0.9f, 0.9f, 0.6f); // Borde sur.
+            cubo.caja(r[0], ALTURA_DIVISION, centroZ, GROSOR_DIVISION, 0.1f, profundo, 0.9f, 0.9f, 0.6f); // Borde oeste.
+            cubo.caja(r[1], ALTURA_DIVISION, centroZ, GROSOR_DIVISION, 0.1f, profundo, 0.9f, 0.9f, 0.6f); // Borde este.
+        }
+    }
+
+    /**
+     * Convierte un punto del mundo (x, z) en píxeles de pantalla dentro del último minimapa dibujado, con el origen
+     * arriba a la izquierda (como usa el HUD). Devuelve null si el minimapa está oculto.
+     * Es la misma cuenta que hace ciudad.vert con uMapa = 1, pero en Java: mundo → -1..1 → píxeles del recuadro.
+     */
+    public float[] aPantalla(float x, float z, int altoVentana) {
+        if (recuadroLado == 0) { // El minimapa no se dibujó en este cuadro.
+            return null; // No hay dónde ubicar el punto.
+        }
+        float mitad = Mapa.LIMITE + MARGEN_MAPA; // Media anchura visible, igual que uMitadMapa.
+        float ndcX = x / mitad; // -1 en el borde oeste, 1 en el borde este.
+        float ndcY = -z / mitad; // 1 en el borde norte (arriba), -1 en el sur.
+        float pixelX = recuadroX + (ndcX * 0.5f + 0.5f) * recuadroLado; // Píxel horizontal desde la izquierda.
+        float pixelYDesdeAbajo = recuadroY + (ndcY * 0.5f + 0.5f) * recuadroLado; // Píxel vertical, como lo mide OpenGL.
+        return new float[] {pixelX, altoVentana - pixelYDesdeAbajo}; // El HUD mide Y desde arriba: se invierte.
     }
 
     /** Dibuja una marca cian y una punta blanca por encima de los edificios del minimapa. */

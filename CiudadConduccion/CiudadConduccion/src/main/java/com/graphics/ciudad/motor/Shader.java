@@ -96,6 +96,16 @@ public class Shader {
         return uniforms.get(nombre); // Recupera la ubicación guardada; OpenGL ignora envíos a -1.
     }
 
+    /** Envía dos números reales a una variable vec2 del shader (lo usa el HUD para tamaños y posiciones 2D). */
+    public void vector2(String nombre, float x, float y) {
+        glUniform2f(uniform(nombre), x, y); // Escribe las dos componentes en el programa activo.
+    }
+
+    /** Envía cuatro números reales a una variable vec4 del shader (lo usa el HUD para colores con transparencia). */
+    public void vector4(String nombre, float x, float y, float z, float w) {
+        glUniform4f(uniform(nombre), x, y, z, w); // Escribe las cuatro componentes en el programa activo.
+    }
+
     /** Envía tres números reales a una variable vec3 del shader. */
     public void vector(String nombre, float x, float y, float z) {
         glUniform3f(uniform(nombre), x, y, z); // Escribe las tres componentes en el programa activo.

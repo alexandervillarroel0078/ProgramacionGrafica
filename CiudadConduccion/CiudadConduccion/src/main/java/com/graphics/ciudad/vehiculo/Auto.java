@@ -41,6 +41,13 @@ public class Auto {
         velocidad = 0; // Detiene cualquier movimiento previo.
     }
 
+    /** Devuelve el auto a una posición anterior y lo detiene; Juego lo usa cuando el movimiento chocaría con el tráfico. */
+    public void detenerEn(float xAnterior, float zAnterior) {
+        x = xAnterior; // Recupera la última posición X sin choque.
+        z = zAnterior; // Recupera la última posición Z sin choque.
+        velocidad = 0; // El choque detiene al auto, igual que contra una manzana: sin rebote.
+    }
+
     // ==================== 3. MOVIMIENTO POR CUADRO ====================
 
     /** Actualiza la conducción; deltaTime contiene los segundos transcurridos entre cuadros. */

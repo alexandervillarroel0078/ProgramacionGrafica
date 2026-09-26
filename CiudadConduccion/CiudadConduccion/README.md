@@ -20,11 +20,13 @@ Incluye bibliotecas nativas para macOS Intel/Apple Silicon, Windows x64 y Linux 
 com.graphics.ciudad
 ├── Main, Juego            ← punto de entrada; ciclo entrada → actualizar(dt) → dibujar
 ├── motor/                 ← Ventana, Shader, Cubo, Camara
-├── mundo/                 ← Mapa, Ciudad, Decoracion, Semaforo
+├── mundo/                 ← Mapa, Ciudad, Decoracion, Semaforo, Senalizacion
 ├── vehiculo/              ← Auto, Colisiones
 ├── iluminacion/           ← Iluminacion
-└── juego/                 ← Entregas, Minimapa
-src/main/resources/shaders ← ciudad.vert, iluminacion.frag, plano.frag
+├── trafico/               ← Vehiculo, Trafico
+├── interfaz/              ← Dibujo2D, Hud
+└── juego/                 ← Entregas, Minimapa, EstadoPartida
+src/main/resources/shaders ← ciudad.vert, iluminacion.frag, plano.frag, hud.vert, hud.frag
 ```
 
 El proyecto nació como cuatro etapas encadenadas por herencia (ciudad → auto → iluminación → juego final), en las que cada etapa ampliaba a la anterior con `extends` y `super`. Ahora cada responsabilidad vive en su propia clase y `Juego` las llama en el mismo orden. Los comentarios conservan esa progresión didáctica.
@@ -102,9 +104,12 @@ Se usa una instrucción por línea, condiciones con llaves y cálculos intermedi
 | N | Día / noche |
 | F | Encender / apagar faros |
 | M | Mostrar / ocultar minimapa |
+| ENTER | Empezar desde el menú de inicio |
+| P | Pausa / continuar |
+| H | Mostrar / ocultar la ayuda de controles |
 | ESC | Salir |
 
-El título de la ventana muestra velocidad en km/h (se supone una unidad = un metro), faros, día/noche, entregas y destino. Puede truncarse si la ventana es pequeña. La velocidad máxima real es algo menor que el límite por la resistencia aplicada. Los semáforos son decorativos: cambian de color pero no bloquean al vehículo. No hay tráfico, peatones, audio, sombras, modelos importados ni ruedas animadas; este es el alcance del ejemplo didáctico finalizado.
+El título de la ventana muestra velocidad en km/h (se supone una unidad = un metro), faros, día/noche, entregas y destino. Puede truncarse si la ventana es pequeña. La velocidad máxima real es algo menor que el límite por la resistencia aplicada. Los semáforos son decorativos: cambian de color pero no bloquean al vehículo. Hay tráfico autónomo con rutas fijas, un HUD dentro de la ventana, sectores con nombre y señales de tránsito (ver la sección 5 de [ENTREGA.md](ENTREGA.md)). No hay peatones, audio, sombras, modelos importados ni ruedas animadas.
 
 ## Verificación
 
@@ -112,7 +117,7 @@ El título de la ventana muestra velocidad en km/h (se supone una unidad = un me
 mvn test
 ```
 
-Las pruebas de lógica (`MapaTest`, `ColisionesTest`, `AutoTest`, `EntregasTest` y `SemaforoTest`) comprueban el mapa, rutas transitables, manzanas, márgenes de colisión, semáforos, entregas y reinicio sin abrir ventanas. Para un arranque gráfico breve puede pasarse `-Ddemo.frames=6` a la **JVM del juego**; al llegar a ese número de cuadros la ventana se cierra. Esta prueba necesita pantalla y comprueba también compilación/enlace de shaders y errores OpenGL.
+Las pruebas de lógica (`MapaTest`, `ColisionesTest`, `AutoTest`, `EntregasTest`, `SemaforoTest`, `TraficoTest` y `JuegoTest`) comprueban el mapa, rutas transitables, manzanas, márgenes de colisión, semáforos, entregas y reinicio sin abrir ventanas. Para un arranque gráfico breve puede pasarse `-Ddemo.frames=6` a la **JVM del juego**; al llegar a ese número de cuadros la ventana se cierra. Esta prueba necesita pantalla y comprueba también compilación/enlace de shaders y errores OpenGL.
 
 Práctica manual: conducir y chocar con una acera; retroceder; cambiar cámara; alternar N/F; redimensionar la ventana; alternar M; completar las tres entregas y reiniciar con R.
 

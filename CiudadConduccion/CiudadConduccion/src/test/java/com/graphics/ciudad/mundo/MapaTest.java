@@ -74,6 +74,21 @@ public class MapaTest extends TestCase {
         assertEquals(totalCalles, alcanzadas); // Todas las calles forman una única red conectada.
     }
 
+    /** Comprueba que hay entre 4 y 5 sectores con nombre y que cada punto de la ciudad pertenece a uno. */
+    public void testSectores() {
+        assertEquals(Mapa.SECTORES.length, Mapa.NOMBRES_SECTORES.length); // Cada sector tiene su nombre.
+        assertTrue(Mapa.SECTORES.length >= 4 && Mapa.SECTORES.length <= 5); // Entre 4 y 5 sectores.
+        assertEquals("Centro", Mapa.nombreSector(0, 0)); // El origen está en el Centro.
+        assertEquals("Barrio Norte", Mapa.nombreSector(0, -50)); // La avenida norte pertenece al Barrio Norte.
+        assertEquals("Parque Sur", Mapa.nombreSector(30, 50)); // La tercera entrega está en el sur.
+        for (float x = -Mapa.LIMITE; x <= Mapa.LIMITE; x += 2.5f) { // Recorre la ciudad en X.
+            for (float z = -Mapa.LIMITE; z <= Mapa.LIMITE; z += 2.5f) { // Recorre la ciudad en Z.
+                assertTrue(x + "," + z, Mapa.sector(x, z) >= 0); // Ningún punto queda sin sector.
+            }
+        }
+        assertEquals(-1, Mapa.sector(0, Mapa.LIMITE + 1)); // Fuera del mapa no hay sector.
+    }
+
     /** Comprueba que destinos, farolas y posición inicial caen en celdas de calle. */
     public void testPosicionesSobreCalles() {
         for (float[] destino : Entregas.DESTINOS) { // Revisa cada parada.

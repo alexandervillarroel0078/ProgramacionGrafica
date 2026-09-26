@@ -80,6 +80,9 @@ public class Ventana {
 
     /** Publica un texto en la barra superior de la ventana. */
     public void titulo(String titulo) {
+        if (ventana == 0) { // Sin ventana creada (por ejemplo, en las pruebas) no hay título que cambiar.
+            return; // Evita llamar a GLFW sin inicializar.
+        }
         glfwSetWindowTitle(ventana, titulo); // Publica el texto en la barra superior de la ventana.
     }
 

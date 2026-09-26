@@ -99,6 +99,14 @@ public class Entregas {
         return DESTINOS[entregas]; // La siguiente parada coincide con el número de entregas hechas.
     }
 
+    /** Devuelve el nombre del destino activo, o "completado" si ya no quedan paradas; lo muestra el HUD. */
+    public String nombreDestino() {
+        if (entregas >= DESTINOS.length) { // Después de la última entrega no hay destino.
+            return "completado (GANASTE en " + (int) tiempo + " s)"; // Muestra el tiempo final.
+        }
+        return NOMBRES_DESTINOS[entregas]; // Nombre de la parada activa.
+    }
+
     /** Indica si todavía hay una parada activa. */
     public boolean quedanEntregas() {
         return entregas < DESTINOS.length; // Falso después de la tercera entrega.

@@ -28,6 +28,11 @@ public class Camara {
         alturaOrbita = limiteCiudad * FACTOR_ALTURA; // Con límite 55 la cámara queda a unas 86 unidades de altura.
     }
 
+    /** Indica si está activa la vista aérea (orbital); Juego dibuja entonces la flecha sobre el auto. */
+    public boolean esAerea() {
+        return camaraAerea; // true con la vista general; false con la cámara de seguimiento.
+    }
+
     /** Invierte el modo de cámara; Juego lo llama al presionar C. */
     public void alternar() {
         camaraAerea = !camaraAerea; // Invierte el modo de cámara actual.

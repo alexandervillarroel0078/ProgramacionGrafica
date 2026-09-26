@@ -71,6 +71,11 @@ public class Iluminacion {
         return " | Luces: " + estadoFaros + " | " + ambiente; // Devuelve ambos indicadores con el formato del título.
     }
 
+    /** Indica si los faros del auto están encendidos; lo muestra el HUD. */
+    public boolean farosEncendidos() {
+        return faros; // Estado elegido con la tecla F.
+    }
+
     /** Indica si la escena está en modo nocturno; Decoracion lo usa para las ventanas. */
     public boolean esNoche() {
         return noche; // Estado elegido con la tecla N.

@@ -6,7 +6,8 @@ package com.graphics.ciudad.mundo; // Agrupa lo que forma la ciudad: mapa, edifi
  * calculados a partir de MAPA.length, la conversión entre índices y coordenadas y la altura de cada edificio.
  * Coordenadas: X = izquierda/derecha; Y = altura; Z = profundidad. Las filas corresponden a Z y las columnas a X.
  * Se comunica con: Ciudad y Decoracion (lo recorren para dibujar), Colisiones (lo recorre para bloquear al auto),
- * Juego (pasa LIMITE a Camara) y Minimapa (ajusta la vista superior a LIMITE).
+ * Juego (pasa LIMITE a Camara y muestra el sector en el HUD) y Minimapa (ajusta la vista superior a LIMITE y
+ * dibuja las divisiones de SECTORES).
  * No usa OpenGL, por eso puede probarse sin ventana.
  */
 public final class Mapa {
@@ -35,6 +36,26 @@ public final class Mapa {
     public static final float TAMANO = MAPA.length * TAM_CELDA; // Lado completo de la ciudad: 11 celdas × 10 = 110 unidades.
     public static final float LIMITE = TAMANO / 2; // Distancia del origen a cada borde: el mapa mide 110 unidades, el límite es 55.
     public static final float ANCHO_EDIFICIO = 7; // Ancho y profundidad de la base de cada edificio dentro de su manzana de 10.
+
+    // ==================== SECTORES CON NOMBRE (valores ajustables) ====================
+    // La ciudad se divide en cinco sectores rectangulares. El Centro es el cuadrado central de 5 × 5 celdas; alrededor,
+    // el norte y el sur ocupan todo el ancho y el oeste y el este completan las franjas laterales. Los bordes (±25)
+    // coinciden con el límite entre una calle y una manzana, así cada manzana pertenece a un solo sector.
+    public static final float RADIO_CENTRO = 25; // Distancia del origen al borde del sector Centro.
+    public static final String[] NOMBRES_SECTORES = { // Nombre de cada sector, en el mismo orden que SECTORES.
+        "Centro", // Cuadrado central, con el parque del origen.
+        "Barrio Norte", // Franja norte (Z negativa), de borde a borde.
+        "Parque Sur", // Franja sur (Z positiva), de borde a borde.
+        "Zona Oeste", // Franja lateral oeste, entre el norte y el sur (nombre corto: entra en el minimapa).
+        "Zona Este" // Franja lateral este, entre el norte y el sur.
+    };
+    public static final float[][] SECTORES = { // Cada fila es un rectángulo {xMin, xMax, zMin, zMax}; se revisan en orden.
+        {-RADIO_CENTRO, RADIO_CENTRO, -RADIO_CENTRO, RADIO_CENTRO}, // Centro.
+        {-LIMITE, LIMITE, -LIMITE, -RADIO_CENTRO}, // Barrio Norte.
+        {-LIMITE, LIMITE, RADIO_CENTRO, LIMITE}, // Parque Sur.
+        {-LIMITE, -RADIO_CENTRO, -RADIO_CENTRO, RADIO_CENTRO}, // Zona Oeste.
+        {RADIO_CENTRO, LIMITE, -RADIO_CENTRO, RADIO_CENTRO} // Zona Este.
+    };
 
     /** Impide crear objetos: Mapa solo ofrece datos y cálculos estáticos. */
     private Mapa() {
@@ -66,6 +87,23 @@ public final class Mapa {
         int columna = indiceCelda(x); // Las columnas avanzan en X.
         boolean dentro = fila >= 0 && fila < MAPA.length && columna >= 0 && columna < MAPA[fila].length; // Evita leer fuera de la matriz.
         return dentro && esCalle(fila, columna); // Solo es calle si está dentro y la celda vale cero.
+    }
+
+    /** Devuelve el índice del sector que contiene el punto (x, z), o -1 si está fuera de la ciudad. */
+    public static int sector(float x, float z) {
+        for (int indice = 0; indice < SECTORES.length; indice++) { // Revisa los sectores en orden: el primero que coincide gana.
+            float[] r = SECTORES[indice]; // Rectángulo {xMin, xMax, zMin, zMax} del sector.
+            if (x >= r[0] && x <= r[1] && z >= r[2] && z <= r[3]) { // Comprueba si el punto está dentro.
+                return indice; // Sector encontrado.
+            }
+        }
+        return -1; // El punto está fuera del mapa.
+    }
+
+    /** Devuelve el nombre del sector que contiene el punto (x, z); el HUD lo muestra como "Sector: ...". */
+    public static String nombreSector(float x, float z) {
+        int indice = sector(x, z); // Busca el sector.
+        return indice >= 0 ? NOMBRES_SECTORES[indice] : "Fuera de la ciudad"; // Nombre o aviso.
     }
 
     /** Calcula la altura del edificio de una celda; Ciudad y Decoracion usan el mismo valor. */

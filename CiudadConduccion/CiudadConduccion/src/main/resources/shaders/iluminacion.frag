@@ -36,6 +36,28 @@ const float CONO_CENTRO = 0.97; // Coseno del núcleo del haz (≈ 14°): dentro
 const float FAROS_ATENUACION_CUADRATICA = 0.04; // Alcance de los faros: atenuación = 1 + 0.04 · d².
 const vec3 COLOR_FARO = vec3(1.0, 0.94, 0.72); // Luz frontal blanca y cálida.
 const float INTENSIDAD_FARO = 8.0; // Multiplicador del aporte de cada faro.
+// Faros del tráfico: mismo cono que los del jugador, pero más débiles y de menor alcance.
+const int MAX_FAROS_TRAFICO = 16; // Tamaño de los arreglos de focos de tráfico; debe coincidir con Trafico.MAX_FAROS_TRAFICO.
+const float INTENSIDAD_FARO_TRAFICO = 4.0; // Multiplicador de cada foco de tráfico: la mitad que el faro del jugador.
+const float ALCANCE_FARO_TRAFICO = 4.0; // Distancia a la que un foco de tráfico rinde la mitad (el del jugador ≈ 5).
+
+uniform vec3 uFarosTrafico[MAX_FAROS_TRAFICO]; // Posición de cada foco de tráfico (dos por vehículo), enviada por Trafico.
+uniform vec3 uDireccionFarosTrafico[MAX_FAROS_TRAFICO]; // Dirección de avance del vehículo dueño de cada foco.
+uniform int uNumFarosTrafico; // Cuántos focos están en uso; de día vale 0 y el bucle no calcula nada.
+
+// ==================== FUNCIÓN DE CONO (un foco con smoothstep y atenuación) ====================
+// La usan los faros del jugador y los del tráfico, así el cálculo del cono existe una sola vez.
+vec3 aporteFoco(vec3 origen, vec3 frente, vec3 normal, float atenuacionCuadratica, float intensidad) {
+    vec3 haciaSuperficie = vMundo - origen; // Forma el vector del faro al fragmento.
+    float distancia = length(haciaSuperficie); // Mide la distancia recorrida por la luz.
+    vec3 eje = normalize(frente + vec3(0.0, -FAROS_INCLINACION, 0.0)); // Inclina el foco ligeramente hacia el suelo.
+    float alineacion = dot(normalize(haciaSuperficie), eje); // Un valor cercano a 1 indica el centro del haz.
+    float cono = smoothstep(CONO_BORDE, CONO_CENTRO, alineacion); // Suaviza el borde entre el exterior y el interior del foco.
+    float difusa = max(dot(normal, -normalize(haciaSuperficie)), 0.0); // Mide cuánto mira la cara hacia el faro.
+    float atenuacion = 1.0 + atenuacionCuadratica * distancia * distancia; // Disminuye la intensidad al alejarse.
+    vec3 colorFaro = COLOR_FARO; // Define una luz frontal blanca y cálida.
+    return colorFaro * cono * difusa * intensidad / atenuacion; // Devuelve el aporte del foco a la iluminación total.
+}
 
 // ==================== CÁLCULO DE LUZ EN LA GPU ====================
 void main() { // Se ejecuta para cada fragmento visible de una caja.
@@ -74,16 +96,14 @@ void main() { // Se ejecuta para cada fragmento visible de una caja.
                 separacion = FAROS_SEPARACION; // Desplaza el segundo faro al lado derecho.
             }
             vec3 origen = uAuto + uFrente * FAROS_AVANCE + lateral * separacion; // Ubica el faro delante de la carrocería.
-            vec3 haciaSuperficie = vMundo - origen; // Forma el vector del faro al fragmento.
-            float distancia = length(haciaSuperficie); // Mide la distancia recorrida por la luz.
-            vec3 eje = normalize(uFrente + vec3(0.0, -FAROS_INCLINACION, 0.0)); // Inclina el foco ligeramente hacia el suelo.
-            float alineacion = dot(normalize(haciaSuperficie), eje); // Un valor cercano a 1 indica el centro del haz.
-            float cono = smoothstep(CONO_BORDE, CONO_CENTRO, alineacion); // Suaviza el borde entre el exterior y el interior del foco.
-            float difusa = max(dot(normal, -normalize(haciaSuperficie)), 0.0); // Mide cuánto mira la cara hacia el faro.
-            float atenuacion = 1.0 + FAROS_ATENUACION_CUADRATICA * distancia * distancia; // Disminuye la intensidad al alejarse.
-            vec3 colorFaro = COLOR_FARO; // Define una luz frontal blanca y cálida.
-            luz += colorFaro * cono * difusa * INTENSIDAD_FARO / atenuacion; // Añade el aporte del foco a la iluminación total.
+            luz += aporteFoco(origen, uFrente, normal, FAROS_ATENUACION_CUADRATICA, INTENSIDAD_FARO); // Añade el aporte del foco a la iluminación total.
         }
+    }
+
+    // Faros del tráfico: independientes de la tecla F. Trafico envía uNumFarosTrafico = 0 de día.
+    float atenuacionTrafico = 1.0 / (ALCANCE_FARO_TRAFICO * ALCANCE_FARO_TRAFICO); // Con d = alcance, 1 + d²/alcance² = 2: rinde la mitad.
+    for (int indice = 0; indice < uNumFarosTrafico; indice++) { // Recorre solo los focos en uso.
+        luz += aporteFoco(uFarosTrafico[indice], uDireccionFarosTrafico[indice], normal, atenuacionTrafico, INTENSIDAD_FARO_TRAFICO); // Mismo cono, más débil y corto.
     }
 
     color = vec4(uColor * luz, 1.0); // Multiplica el material por toda la luz acumulada.

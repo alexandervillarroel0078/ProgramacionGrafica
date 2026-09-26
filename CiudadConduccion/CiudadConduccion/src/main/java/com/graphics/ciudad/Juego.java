@@ -1,6 +1,9 @@
 package com.graphics.ciudad; // Paquete raíz de la versión organizada por composición.
 
 import com.graphics.ciudad.iluminacion.Iluminacion; // Sol, farolas y faros.
+import com.graphics.ciudad.interfaz.Dibujo2D; // Pase 2D con paneles y texto (STBEasyFont).
+import com.graphics.ciudad.interfaz.Hud; // Panel de estado, ayuda, pausa y menú dentro de la ventana.
+import com.graphics.ciudad.juego.EstadoPartida; // Menú de inicio, partida en curso o pausa.
 import com.graphics.ciudad.juego.Entregas; // Reglas y progreso de la partida.
 import com.graphics.ciudad.juego.Minimapa; // Segundo pase de dibujo desde arriba.
 import com.graphics.ciudad.motor.Camara; // Cámara de seguimiento y aérea.
@@ -10,7 +13,10 @@ import com.graphics.ciudad.motor.Ventana; // Ventana GLFW, teclado y presentaci�
 import com.graphics.ciudad.mundo.Ciudad; // Asfalto, calles, edificios y parques.
 import com.graphics.ciudad.mundo.Decoracion; // Árboles, bancos, ventanas, pasos peatonales y semáforos.
 import com.graphics.ciudad.mundo.Mapa; // Aporta el límite de la ciudad a la cámara aérea.
+import com.graphics.ciudad.trafico.Trafico; // Vehículos autónomos que recorren la ciudad.
 import com.graphics.ciudad.vehiculo.Auto; // Vehículo del jugador.
+import com.graphics.ciudad.vehiculo.IndicadorJugador; // Flecha flotante sobre el auto en la vista aérea.
+import java.util.function.IntPredicate; // Pregunta si una tecla está presionada; las pruebas pueden simularlo.
 import org.lwjgl.glfw.GLFWErrorCallback; // Muestra los errores de GLFW en la consola.
 import static org.lwjgl.glfw.GLFW.*; // Importa las funciones y constantes de ventanas y teclado.
 import static org.lwjgl.opengl.GL33.*; // Importa las funciones OpenGL hasta la versión 3.3.
@@ -22,7 +28,7 @@ import static org.lwjgl.opengl.GL33.*; // Importa las funciones OpenGL hasta la 
  * Responsable de: crear los módulos, repartir las teclas, actualizar Auto y Entregas en orden, componer el título,
  * decidir el orden de dibujo de la escena y liberar los recursos al salir.
  * Se comunica con: Ventana, Shader, Cubo y Camara (motor); Ciudad y Decoracion (mundo); Auto (vehiculo);
- * Iluminacion; Entregas y Minimapa (juego). Main lo crea y llama a ejecutar().
+ * Trafico; Iluminacion; Entregas, Minimapa y EstadoPartida (juego); Hud y Dibujo2D (interfaz). Main lo crea y llama a ejecutar().
  * Antes cada etapa ampliaba a la anterior con extends y super; ahora Juego llama a cada módulo en el mismo orden.
  * Los comentarios explican las instrucciones; las llaves solo delimitan bloques.
  */
@@ -44,6 +50,12 @@ public class Juego {
     private final Iluminacion iluminacion = new Iluminacion(shader, cubo); // Día/noche, farolas y faros.
     private final Entregas entregas = new Entregas(shader, cubo); // Destinos, progreso y cronómetro.
     private final Minimapa minimapa = new Minimapa(shader, cubo); // Vista superior en un recuadro.
+    private final IndicadorJugador indicador = new IndicadorJugador(shader, cubo); // Señala el auto desde la vista aérea.
+    private final Trafico trafico = new Trafico(shader, cubo, iluminacion::esNoche); // Vehículos autónomos con rutas cíclicas por las calles.
+    private final Dibujo2D dibujo2D = new Dibujo2D(); // Pase 2D final: paneles y texto sobre la escena.
+    private final Hud hud = new Hud(); // Panel de estado, ayuda (H), cartel de pausa y menú de inicio.
+    private final EstadoPartida estado = new EstadoPartida(); // Arranca en el menú; ENTER empieza y P pausa.
+    private IntPredicate teclado = ventana::pulsada; // Teclas mantenidas; por defecto las lee de la ventana GLFW.
     private float relojGlobal = 0; // Segundos desde el arranque; no se detiene al ganar ni se reinicia con R. Anima los semáforos.
 
     // ==================== 2. INICIO, CICLO Y LIMPIEZA ====================
@@ -67,6 +79,7 @@ public class Juego {
         ventana.crear(NOMBRE_JUEGO, this::tecla); // Crea la ventana y entrega cada tecla presionada a tecla().
         shader.crear(SHADER_VERTICES, SHADER_FRAGMENTOS); // Compila y enlaza los shaders que transforman y colorean los vértices.
         cubo.crear(); // Guarda en la GPU el cubo que servirá para todos los objetos.
+        dibujo2D.crear(); // Compila el shader del HUD y reserva su buffer de vértices.
     }
 
     /** Mantiene el ciclo continuo de eventos, actualización, dibujo y presentación. */
@@ -95,6 +108,7 @@ public class Juego {
 
     /** Libera únicamente los recursos que llegaron a crearse. */
     private void limpiar() {
+        dibujo2D.eliminar(); // Libera el shader y el buffer del HUD si existen.
         shader.eliminar(); // Libera el programa de shaders si existe.
         cubo.eliminar(); // Libera el VBO y el VAO del cubo si existen.
         ventana.destruir(); // Libera callbacks, ventana y GLFW.
@@ -116,6 +130,19 @@ public class Juego {
         if (key == GLFW_KEY_R) { // Comprueba si el usuario quiere comenzar de nuevo.
             auto.reset(); // Restaura posición, velocidad y orientación del vehículo.
             entregas.reset(); // Amplía el reinicio del auto: vuelve a la primera parada y al cronómetro en cero.
+            trafico.reset(); // Devuelve cada vehículo autónomo al inicio de su ruta.
+        }
+
+        if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) { // ENTER del teclado principal o del numérico.
+            estado.empezar(); // Sale del menú de inicio y comienza la partida.
+        }
+
+        if (key == GLFW_KEY_P) { // Comprueba la tecla de pausa.
+            estado.alternarPausa(); // Congela o reanuda auto, tráfico, entregas y semáforos.
+        }
+
+        if (key == GLFW_KEY_H) { // Comprueba la tecla de ayuda.
+            hud.alternarAyuda(); // Muestra u oculta la lista de controles.
         }
 
         iluminacion.tecla(key); // Amplía los controles con N y F; conserva ESC, C y R.
@@ -125,9 +152,17 @@ public class Juego {
     // ==================== 4. ACTUALIZACIÓN POR CUADRO ====================
 
     /** Actualiza el vehículo y comprueba si llegó y frenó en el destino activo; deltaTime son segundos entre cuadros. */
-    private void actualizar(float deltaTime) {
+    void actualizar(float deltaTime) {
+        // En el menú o en pausa el paso de tiempo es 0: el mismo código se ejecuta, pero nada se mueve ni avanza.
+        deltaTime = estado.dtEfectivo(deltaTime); // Tiempo real al jugar, 0 en menú o pausa.
         relojGlobal += deltaTime; // Avanza el reloj de la animación urbana en todos los cuadros.
-        auto.actualizar(deltaTime, ventana::pulsada); // Procesa aceleración, giro y colisiones; reemplaza la cámara orbital de la primera lección.
+        float antesX = auto.getX(); // Guarda la posición previa por si el movimiento choca con el tráfico.
+        float antesZ = auto.getZ(); // Guarda la posición previa en profundidad.
+        auto.actualizar(deltaTime, teclado); // Procesa aceleración, giro y colisiones; reemplaza la cámara orbital de la primera lección.
+        if (trafico.bloquea(antesX, antesZ, auto.getX(), auto.getZ(), Auto.RADIO_AUTO)) { // Círculo contra círculo con cada vehículo.
+            auto.detenerEn(antesX, antesZ); // El jugador no atraviesa el tráfico: vuelve atrás y se detiene.
+        }
+        trafico.actualizar(deltaTime, auto.getX(), auto.getZ()); // Mueve los vehículos; frenan si el jugador está adelante.
         actualizarTitulo(); // Muestra los controles y la velocidad actual.
         entregas.actualizar(deltaTime, auto); // Añade el objetivo del juego al movimiento del auto.
     }
@@ -158,17 +193,82 @@ public class Juego {
         shader.entero("uMapa", 0); // Selecciona perspectiva normal, no la proyección del minimapa.
         camara.configurar(shader, auto.getX(), auto.getZ(), auto.getAngulo(), ancho, alto); // Actualiza la posición y el objetivo de la cámara.
         iluminacion.preparar(auto); // Envía la iluminación: día/noche, faros y posiciones de las farolas.
+        trafico.prepararFaros(); // Envía los focos de los faros del tráfico (ninguno de día).
         escena(); // Dibuja la ciudad y todos los módulos sobre ella.
         if (glGetError() != GL_NO_ERROR) { // Comprueba si OpenGL reportó una operación inválida.
             throw new IllegalStateException("Error OpenGL al dibujar"); // Hace visible el problema en consola.
         }
         minimapa.dibujar(ancho, alto, auto, this::escena); // Amplía el cuadro: dibuja otra vez la escena en el minimapa.
+        dibujarHud(ancho, alto); // Último pase: interfaz 2D encima de todo.
+        if (glGetError() != GL_NO_ERROR) { // Comprueba que el HUD no haya generado errores OpenGL.
+            throw new IllegalStateException("Error OpenGL en el HUD"); // Expone el error en la consola.
+        }
+    }
+
+    /** Dibuja el HUD en un pase ortográfico 2D y restaura el estado de OpenGL para el próximo cuadro. */
+    private void dibujarHud(int ancho, int alto) {
+        int kilometrosPorHora = Math.round(Math.abs(auto.getVelocidad()) * 3.6f); // Convierte m/s a km/h y redondea.
+        String[] lineas = { // Líneas del panel de estado, de arriba hacia abajo.
+            "Velocidad: " + kilometrosPorHora + " km/h", // Velocidad actual.
+            "Faros: " + (iluminacion.farosEncendidos() ? "ON" : "OFF"), // Estado de los faros (tecla F).
+            "Ambiente: " + (iluminacion.esNoche() ? "Noche" : "Día"), // Día o noche (tecla N).
+            "Entregas: " + entregas.getEntregas() + "/" + Entregas.DESTINOS.length, // Progreso de la partida.
+            "Destino: " + entregas.nombreDestino(), // Parada activa (marca dorada).
+            "Sector: " + Mapa.nombreSector(auto.getX(), auto.getZ()), // Zona de la ciudad donde está el auto.
+            "H: ayuda   P: pausa" // Recordatorio de las teclas de la interfaz.
+        };
+        dibujo2D.comenzar(ancho, alto); // Desactiva la profundidad, activa la mezcla y usa el shader del HUD.
+        try { // Asegura que el estado 3D se restaure aunque falle el dibujo.
+            dibujarNombresSectores(ancho, alto); // Nombres de los sectores sobre el minimapa (si está visible).
+            hud.dibujar(dibujo2D, ancho, alto, lineas, estado.getEstado()); // Panel, ayuda, pausa o menú.
+        } finally { // El próximo cuadro espera profundidad activa y sin mezcla.
+            dibujo2D.terminar(); // Restaura el estado de OpenGL.
+        }
+    }
+
+    /** Ubica el nombre de cada sector en el centro de su rectángulo, convertido a píxeles del minimapa. */
+    private void dibujarNombresSectores(int ancho, int alto) {
+        float[][] posiciones = new float[Mapa.SECTORES.length][]; // Un punto de pantalla por sector.
+        for (int i = 0; i < Mapa.SECTORES.length; i++) { // Recorre los sectores de Mapa.
+            float[] r = Mapa.SECTORES[i]; // Rectángulo {xMin, xMax, zMin, zMax}.
+            posiciones[i] = minimapa.aPantalla((r[0] + r[1]) / 2, (r[2] + r[3]) / 2, alto); // Centro del sector en píxeles.
+            if (posiciones[i] == null) { // El minimapa está oculto (tecla M).
+                return; // No hay dónde escribir los nombres.
+            }
+        }
+        hud.dibujarEtiquetasMapa(dibujo2D, ancho, alto, posiciones, Mapa.NOMBRES_SECTORES); // Escribe los nombres.
+    }
+
+    // ==================== 6. ACCESO PARA PRUEBAS ====================
+
+    /** Reemplaza la lectura del teclado; las pruebas simulan teclas presionadas sin abrir una ventana. */
+    void usarTeclado(IntPredicate teclasSimuladas) {
+        teclado = teclasSimuladas; // Auto.actualizar() consultará esta función en lugar de GLFW.
+    }
+
+    /** Devuelve el estado de la partida (menú, jugando o pausa). */
+    EstadoPartida getEstado() {
+        return estado; // Estado actual.
+    }
+
+    /** Devuelve el auto del jugador. */
+    Auto getAuto() {
+        return auto; // Vehículo controlado por el usuario.
+    }
+
+    /** Devuelve el tráfico autónomo. */
+    Trafico getTrafico() {
+        return trafico; // Vehículos de la ciudad.
     }
 
     /** Dibuja la escena completa; Minimapa la reutiliza para su segundo pase. */
     private void escena() {
         ciudad.dibujar(); // Dibuja asfalto, calles, edificios y parques.
-        auto.dibujar(cubo); // Añade el modelo del vehículo sobre la ciudad.
+        auto.dibujar(cubo); // Añade el modelo del vehículo sobre la ciudad (en todas las cámaras y en el minimapa).
+        if (camara.esAerea() && !minimapa.enVistaMapa()) { // Desde arriba el auto se ve chico: se marca con una flecha.
+            indicador.dibujar(auto.getX(), auto.getZ(), relojGlobal); // En la cámara de seguimiento no hace falta.
+        }
+        trafico.dibujar(); // Añade los vehículos autónomos (con sus luces según día/noche); también aparecen en el minimapa.
         iluminacion.dibujarFarolas(); // Añade geometría a la ciudad y al auto: postes y bombillas.
         if (!minimapa.enVistaMapa()) { // Los detalles pequeños solo son necesarios en la vista principal.
             decoracion.dibujar(iluminacion.esNoche(), relojGlobal); // Añade árboles, bancos, ventanas y señalización urbana.

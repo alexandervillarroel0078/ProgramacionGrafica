@@ -6,7 +6,8 @@ import com.graphics.ciudad.mundo.Mapa; // Proporciona las manzanas y los límite
  * COLISIONES: decide si el auto cabe en una posición.
  * Responsable de: la prueba círculo contra rectángulo entre el auto (radio RADIO_AUTO) y cada manzana,
  * usando el punto más cercano y la distancia al cuadrado, y de impedir salir por los bordes del mapa.
- * Se comunica con: Mapa (celdas y límites) y Auto (lo consulta antes de moverse). No usa OpenGL.
+ * También ofrece la prueba círculo contra círculo que usa Trafico para que el jugador no atraviese otros vehículos.
+ * Se comunica con: Mapa (celdas y límites), Auto (lo consulta antes de moverse) y Trafico. No usa OpenGL.
  * El círculo de colisión es conservador para contener todas las piezas; el choque detiene al auto, sin rebotes.
  */
 public final class Colisiones {
@@ -47,5 +48,13 @@ public final class Colisiones {
         }
 
         return true; // Acepta la posición porque no se encontró ningún obstáculo.
+    }
+
+    /** Círculo contra círculo: dos objetos se tocan si la distancia entre centros es menor que la suma de sus radios. */
+    public static boolean circulosSeSolapan(float x1, float z1, float radio1, float x2, float z2, float radio2) {
+        float distanciaX = x1 - x2; // Separación horizontal entre los centros.
+        float distanciaZ = z1 - z2; // Separación en profundidad entre los centros.
+        float sumaRadios = radio1 + radio2; // Distancia mínima permitida entre centros.
+        return distanciaX * distanciaX + distanciaZ * distanciaZ < sumaRadios * sumaRadios; // Compara al cuadrado para evitar la raíz.
     }
 }

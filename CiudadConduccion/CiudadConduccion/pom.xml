@@ -31,6 +31,13 @@
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId><version>${lwjgl.version}</version><classifier>natives-linux</classifier><scope>runtime</scope></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId><version>${lwjgl.version}</version><classifier>natives-linux-arm64</classifier><scope>runtime</scope></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId><version>${lwjgl.version}</version><classifier>natives-windows</classifier><scope>runtime</scope></dependency>
+    <!-- lwjgl-stb: STBEasyFont genera el texto del HUD como cuadriláteros, sin texturas ni fuentes externas. -->
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId><version>${lwjgl.version}</version></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId><version>${lwjgl.version}</version><classifier>natives-macos</classifier><scope>runtime</scope></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId><version>${lwjgl.version}</version><classifier>natives-macos-arm64</classifier><scope>runtime</scope></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId><version>${lwjgl.version}</version><classifier>natives-linux</classifier><scope>runtime</scope></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId><version>${lwjgl.version}</version><classifier>natives-linux-arm64</classifier><scope>runtime</scope></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId><version>${lwjgl.version}</version><classifier>natives-windows</classifier><scope>runtime</scope></dependency>
     <dependency><groupId>junit</groupId><artifactId>junit</artifactId><version>3.8.1</version><scope>test</scope></dependency>
   </dependencies>
   <build><plugins>

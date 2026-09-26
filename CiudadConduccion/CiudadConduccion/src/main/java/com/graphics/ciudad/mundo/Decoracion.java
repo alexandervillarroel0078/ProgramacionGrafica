@@ -6,8 +6,8 @@ import com.graphics.ciudad.motor.Shader; // Activa la emisión de las ventanas n
 /**
  * DECORACION: detalles urbanos de la ciudad terminada.
  * Responsable de: decidir qué decoración corresponde a cada parcela del Mapa y dibujar parques (árboles y
- * banco), ventanas iluminadas, pasos peatonales y semáforos.
- * Se comunica con: Mapa (recorre las celdas), Cubo y Shader (dibujo y emisión), Semaforo (uno por manzana).
+ * banco), ventanas iluminadas, pasos peatonales, semáforos y señales de tránsito.
+ * Se comunica con: Mapa (recorre las celdas), Cubo y Shader (dibujo y emisión), Semaforo y Senalizacion (en cada manzana).
  * Juego la dibuja solo en la vista principal; en el minimapa se omite, y le pasa el estado de noche de
  * Iluminacion y el reloj global de Juego (los semáforos siguen ciclando aunque la partida termine).
  */
@@ -16,12 +16,14 @@ public class Decoracion {
     private final Shader shader; // Programa que recibe el interruptor de emisión.
     private final Cubo cubo; // Geometría con la que se construyen los detalles.
     private final Semaforo semaforo; // Dibuja los semáforos junto a cada manzana.
+    private final Senalizacion senalizacion; // Dibuja las señales de PARE y de dirección en las esquinas.
 
     /** Recibe el shader y el cubo compartidos y prepara el semáforo reutilizable. */
     public Decoracion(Shader shader, Cubo cubo) {
         this.shader = shader; // Guarda el programa para cambiar uEmision.
         this.cubo = cubo; // Guarda la geometría compartida.
         this.semaforo = new Semaforo(shader, cubo); // Un mismo objeto dibuja todos los semáforos.
+        this.senalizacion = new Senalizacion(cubo); // Un mismo objeto dibuja todas las señales.
     }
 
     // ==================== DECORACIÓN DE LAS MANZANAS ====================
@@ -43,6 +45,7 @@ public class Decoracion {
                 if (tipo != Mapa.CALLE) { // La señalización se coloca junto a las manzanas, no en celdas de calle.
                     dibujarPasoPeatonal(x, z); // Añade el cruce pintado sobre la calle contigua.
                     semaforo.dibujar(x + 4, z - 4, tiempo); // Coloca el semáforo dentro de la acera.
+                    senalizacion.dibujarEnManzana(x, z); // Añade PARE y la señal de dirección en las esquinas del sur.
                 }
             }
         }
