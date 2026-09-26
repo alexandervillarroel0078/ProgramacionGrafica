@@ -1,5 +1,7 @@
 package com.graphics.ciudad.motor; // Agrupa las piezas técnicas: ventana, shaders, geometría y cámara.
 
+import java.util.function.BiConsumer; // Recibe el método que atenderá cada arrastre del mouse (dx, dy).
+import java.util.function.DoubleConsumer; // Recibe el método que atenderá cada giro de la ruedita.
 import java.util.function.IntConsumer; // Recibe el método que atenderá cada tecla presionada.
 import org.lwjgl.glfw.Callbacks; // Permite liberar los callbacks de la ventana al cerrar.
 import org.lwjgl.opengl.GL; // Carga las funciones OpenGL disponibles en el equipo.
@@ -11,7 +13,7 @@ import static org.lwjgl.opengl.GL33.*; // Importa las funciones OpenGL hasta la 
  * Responsable de: crear la ventana y el contexto OpenGL 3.3 Core, registrar el callback de teclado,
  * informar el tamaño real del framebuffer (resize), cambiar el título, presentar cada imagen y destruirse.
  * Se comunica con: Juego, que la crea, le entrega el método tecla() y la consulta en cada vuelta del ciclo;
- * Auto, que lee las teclas mantenidas mediante pulsada().
+ * Auto, que lee las teclas mantenidas mediante pulsada(); Camara, que recibe arrastres y ruedita del mouse.
  */
 public class Ventana {
 
@@ -20,6 +22,9 @@ public class Ventana {
     private int alto = 760; // Alto inicial de la ventana; después contiene píxeles del framebuffer.
     private final int[] anchoReal = new int[1]; // Reserva espacio para que GLFW escriba el ancho en píxeles.
     private final int[] altoReal = new int[1]; // Reserva espacio para que GLFW escriba el alto en píxeles.
+    private boolean arrastrando = false; // true mientras el botón izquierdo del mouse está presionado.
+    private double ultimoX; // Última posición X conocida del cursor, en píxeles de la ventana.
+    private double ultimoY; // Última posición Y conocida del cursor (crece hacia abajo).
 
     /** Configura GLFW y OpenGL, igual que las clases de cámara del proyecto original. */
     public void crear(String titulo, IntConsumer alPresionar) {
@@ -44,6 +49,34 @@ public class Ventana {
                 alPresionar.accept(key); // Entrega la tecla al método tecla() de Juego, que la reparte entre los módulos.
             }
         }); // Termina el registro del callback de teclado.
+    }
+
+    /**
+     * Registra los callbacks del mouse, igual que el de teclado: GLFW los llama durante procesarEventos().
+     * - Botón: al presionar el izquierdo empieza un arrastre y se guarda la posición del cursor; al soltarlo termina.
+     * - Cursor: mientras dura el arrastre, entrega a alArrastrar el movimiento (dx, dy) desde la última posición.
+     * - Ruedita: entrega a alRodar los pasos verticales (positivo = hacia adelante).
+     * Callbacks.glfwFreeCallbacks() los libera al destruir la ventana, junto con el de teclado.
+     */
+    public void configurarMouse(BiConsumer<Double, Double> alArrastrar, DoubleConsumer alRodar) {
+        glfwSetMouseButtonCallback(ventana, (ventanaEvento, boton, accion, mods) -> { // Botones del mouse.
+            if (boton == GLFW_MOUSE_BUTTON_LEFT) { // Solo el botón izquierdo arrastra.
+                arrastrando = accion == GLFW_PRESS; // Empieza al presionar y termina al soltar.
+                double[] cx = new double[1]; // Espacio para la posición X del cursor.
+                double[] cy = new double[1]; // Espacio para la posición Y.
+                glfwGetCursorPos(ventanaEvento, cx, cy); // Posición actual: punto de partida del arrastre.
+                ultimoX = cx[0]; // Guarda X.
+                ultimoY = cy[0]; // Guarda Y.
+            }
+        }); // Termina el registro del callback de botones.
+        glfwSetCursorPosCallback(ventana, (ventanaEvento, px, py) -> { // Movimiento del cursor.
+            if (arrastrando) { // Solo interesa mientras se arrastra.
+                alArrastrar.accept(px - ultimoX, py - ultimoY); // Entrega cuánto se movió desde el último evento.
+            }
+            ultimoX = px; // Actualiza la última posición X.
+            ultimoY = py; // Actualiza la última posición Y.
+        }); // Termina el registro del callback de cursor.
+        glfwSetScrollCallback(ventana, (ventanaEvento, dx, dy) -> alRodar.accept(dy)); // Ruedita: pasos verticales.
     }
 
     /** Indica si el usuario o el programa solicitaron cerrar la ventana. */

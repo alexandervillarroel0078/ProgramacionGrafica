@@ -99,7 +99,8 @@ Se usa una instrucción por línea, condiciones con llaves y cálculos intermedi
 | W / S o arriba / abajo | Acelerar / frenar y retroceder |
 | A / D o izquierda / derecha | Girar mientras el auto se mueve |
 | Espacio | Freno |
-| C | Cámara de seguimiento / aérea oblicua |
+| C | Cámara: seguimiento → orbital del auto → aérea |
+| Mouse (cámara orbital) | Arrastrar con el botón izquierdo: girar y elevar; ruedita: acercar y alejar |
 | R | Reiniciar el auto y las entregas |
 | N | Día / noche |
 | F | Encender / apagar faros |
@@ -109,7 +110,7 @@ Se usa una instrucción por línea, condiciones con llaves y cálculos intermedi
 | H | Mostrar / ocultar la ayuda de controles |
 | ESC | Salir |
 
-El título de la ventana muestra velocidad en km/h (se supone una unidad = un metro), faros, día/noche, entregas y destino. Puede truncarse si la ventana es pequeña. La velocidad máxima real es algo menor que el límite por la resistencia aplicada. Los semáforos son decorativos: cambian de color pero no bloquean al vehículo. Hay tráfico autónomo con rutas fijas, un HUD dentro de la ventana, sectores con nombre y señales de tránsito (ver la sección 5 de [ENTREGA.md](ENTREGA.md)). No hay peatones, audio, sombras, modelos importados ni ruedas animadas.
+El título de la ventana muestra velocidad en km/h (se supone una unidad = un metro), faros, día/noche, entregas y destino. Puede truncarse si la ventana es pequeña. La velocidad máxima real es algo menor que el límite por la resistencia aplicada. Los semáforos son decorativos: cambian de color pero no bloquean al vehículo. Hay tráfico autónomo con rutas fijas, un HUD dentro de la ventana, sectores con nombre y señales de tránsito (ver la sección 5 de [ENTREGA.md](ENTREGA.md)). Las ruedas del auto giran y doblan, y hay luces de freno y reversa. No hay peatones, audio, sombras ni modelos importados.
 
 ## Verificación
 

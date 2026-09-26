@@ -3,6 +3,12 @@ package com.graphics.ciudad.trafico; // Agrupa el tráfico autónomo: vehículos
 import com.graphics.ciudad.mundo.Mapa; // Aporta el ancho de la calle para calcular el carril.
 import com.graphics.ciudad.motor.Cubo; // Dibuja cada pieza del vehículo.
 import com.graphics.ciudad.motor.Shader; // Activa la emisión de las luces traseras de noche.
+import com.graphics.ciudad.vehiculo.Cabina; // Cabina trapezoidal compartida con el auto del jugador.
+import com.graphics.ciudad.vehiculo.LucesVehiculo; // Ubicación y colores de luces, compartidos con el auto del jugador.
+import static com.graphics.ciudad.vehiculo.LucesVehiculo.ALTURA_LUZ; // Altura de las luces.
+import static com.graphics.ciudad.vehiculo.LucesVehiculo.FRENTE_LUZ; // Posición local de los faros.
+import static com.graphics.ciudad.vehiculo.LucesVehiculo.LADO_LUZ; // Separación lateral de las luces.
+import static com.graphics.ciudad.vehiculo.LucesVehiculo.TRASERA_LUZ; // Posición local de las luces traseras.
 import java.util.function.BooleanSupplier; // Pregunta a Iluminacion si es de noche, sin copiar esa variable.
 
 /**
@@ -31,14 +37,8 @@ public class Vehiculo {
     public static final float DISTANCIA_ANTICIPACION = 4; // Mira este tramo por delante sobre su carril: corrige desvíos sin zigzaguear.
 
     // ==================== 1b. LUCES DEL VEHÍCULO (valores ajustables) ====================
-    public static final float LADO_LUZ = 0.55f; // Separación lateral de cada luz respecto al centro del vehículo.
-    public static final float ALTURA_LUZ = 0.68f; // Altura de faros y luces traseras sobre el suelo.
-    public static final float FRENTE_LUZ = -1.32f; // Posición local de los faros: el frente del vehículo es -Z local.
-    public static final float TRASERA_LUZ = 1.32f; // Posición local de las luces traseras.
-    public static final float[] COLOR_FARO_ENCENDIDO = {1, 0.97f, 0.8f}; // Blanco cálido brillante (emisivo).
-    public static final float[] COLOR_FARO_APAGADO = {0.25f, 0.25f, 0.27f}; // Gris oscuro: vidrio sin luz.
-    public static final float[] COLOR_TRASERA_ENCENDIDA = {1, 0.08f, 0.05f}; // Rojo intenso (emisivo).
-    public static final float[] COLOR_TRASERA_APAGADA = {0.35f, 0.03f, 0.03f}; // Rojo oscuro: plástico sin luz.
+    // Ubicación, tamaño y colores de faros y luces traseras: están en vehiculo/LucesVehiculo, compartidos con el auto
+    // del jugador. El tráfico no frena con luces: de noche muestra luces de posición.
 
     // ==================== 2. ESTADO ====================
     private final float[][] ruta; // Waypoints {x, z} en centros de celdas de calle; la ruta es cíclica.
@@ -212,9 +212,9 @@ public class Vehiculo {
     }
 
     /** Construye el vehículo con cajas, en el mismo estilo que Auto pero con su propio color. */
-    public void dibujar(Cubo cubo, Shader shader) {
+    public void dibujar(Cubo cubo, Shader shader, Cabina cabina) {
         pieza(cubo, 0, 0.65f, 0, 1.65f, 0.55f, 2.6f, rojo, verde, azul); // Dibuja la carrocería con el color del vehículo.
-        pieza(cubo, 0, 1.12f, 0.12f, 1.3f, 0.55f, 1.25f, 0.18f, 0.22f, 0.28f); // Dibuja la cabina con vidrios oscuros.
+        cabina.dibujar(x, z, angulo, rojo, verde, azul); // La misma cabina que el jugador, con el color de este vehículo.
         float[] ladosRuedas = {-0.88f, 0.88f}; // Ubica ruedas a izquierda y derecha.
         float[] ejesRuedas = {-0.82f, 0.82f}; // Ubica las ruedas delanteras y traseras.
         for (float ladoX : ladosRuedas) { // Selecciona uno de los dos lados del vehículo.
@@ -224,14 +224,15 @@ public class Vehiculo {
         }
         float[] ladosLuces = {-LADO_LUZ, LADO_LUZ}; // Define la separación lateral de las luces.
         boolean encendidas = lucesEncendidas(); // Se consulta una vez por dibujo: de noche encendidas, de día apagadas.
-        float[] faro = encendidas ? COLOR_FARO_ENCENDIDO : COLOR_FARO_APAGADO; // Color de los faros según el estado.
-        float[] trasera = encendidas ? COLOR_TRASERA_ENCENDIDA : COLOR_TRASERA_APAGADA; // Color de las luces traseras.
-        if (encendidas) { // De noche las bombillas deben verse encendidas.
-            shader.entero("uEmision", 1); // Evita que la iluminación las oscurezca: brillan con su propio color.
-        }
+        float[] faro = LucesVehiculo.colorFaro(encendidas); // Blanco emisivo encendido o gris oscuro apagado.
+        float[] trasera = LucesVehiculo.colorTrasera(encendidas, false); // Luz de posición de noche; el tráfico no frena con luces.
+        float[] tf = LucesVehiculo.TAMANO_FARO; // Medidas del faro.
+        float[] tt = LucesVehiculo.TAMANO_TRASERA; // Medidas de la luz trasera.
         for (float ladoX : ladosLuces) { // Repite el dibujo para ambos lados.
-            pieza(cubo, ladoX, ALTURA_LUZ, FRENTE_LUZ, 0.38f, 0.2f, 0.07f, faro[0], faro[1], faro[2]); // Dibuja un faro delantero.
-            pieza(cubo, ladoX, ALTURA_LUZ, TRASERA_LUZ, 0.35f, 0.17f, 0.07f, trasera[0], trasera[1], trasera[2]); // Dibuja una luz trasera roja.
+            shader.entero("uEmision", (int) faro[3]); // Emisivo solo si está encendido: brilla con su propio color.
+            pieza(cubo, ladoX, ALTURA_LUZ, FRENTE_LUZ, tf[0], tf[1], tf[2], faro[0], faro[1], faro[2]); // Dibuja un faro delantero.
+            shader.entero("uEmision", (int) trasera[3]); // Evita que la iluminación oscurezca la luz de posición.
+            pieza(cubo, ladoX, ALTURA_LUZ, TRASERA_LUZ, tt[0], tt[1], tt[2], trasera[0], trasera[1], trasera[2]); // Dibuja una luz trasera roja.
         }
         shader.entero("uEmision", 0); // Restablece el material normal para el siguiente objeto.
     }

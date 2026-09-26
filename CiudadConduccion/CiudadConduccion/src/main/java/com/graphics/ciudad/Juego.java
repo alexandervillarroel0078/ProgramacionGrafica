@@ -16,6 +16,7 @@ import com.graphics.ciudad.mundo.Decoracion; // Árboles, bancos, ventanas, paso
 import com.graphics.ciudad.mundo.Mapa; // Aporta el límite de la ciudad a la cámara aérea.
 import com.graphics.ciudad.trafico.Trafico; // Vehículos autónomos que recorren la ciudad.
 import com.graphics.ciudad.vehiculo.Auto; // Vehículo del jugador.
+import com.graphics.ciudad.vehiculo.Cabina; // Cabina trapezoidal extruida, compartida por el jugador y el tráfico.
 import com.graphics.ciudad.vehiculo.IndicadorJugador; // Flecha flotante sobre el auto en la vista aérea.
 import java.util.function.IntPredicate; // Pregunta si una tecla está presionada; las pruebas pueden simularlo.
 import org.lwjgl.glfw.GLFWErrorCallback; // Muestra los errores de GLFW en la consola.
@@ -47,6 +48,7 @@ public class Juego {
     private final Camara camara = new Camara(Mapa.LIMITE); // Cámara de seguimiento o vista aérea ajustada al tamaño del mapa.
     private final Ciudad ciudad = new Ciudad(cubo); // Ciudad generada a partir del Mapa.
     private final Figuras figuras = new Figuras(shader); // Mallas redondeadas generadas por fórmulas.
+    private final Cabina cabina = new Cabina(shader, cubo); // Cabina de los autos: perfil extruido con vidrios.
     private final Decoracion decoracion = new Decoracion(shader, cubo, figuras); // Detalles urbanos de la ciudad terminada.
     private final Auto auto = new Auto(); // Vehículo del jugador; no necesita OpenGL para existir.
     private final Iluminacion iluminacion = new Iluminacion(shader, cubo); // Día/noche, farolas y faros.
@@ -79,9 +81,11 @@ public class Juego {
     /** Crea la ventana, compila los shaders y sube el cubo a la GPU. */
     private void iniciar() {
         ventana.crear(NOMBRE_JUEGO, this::tecla); // Crea la ventana y entrega cada tecla presionada a tecla().
+        ventana.configurarMouse(camara::arrastrar, camara::zoom); // El mouse maneja la cámara orbital del auto.
         shader.crear(SHADER_VERTICES, SHADER_FRAGMENTOS); // Compila y enlaza los shaders que transforman y colorean los vértices.
         cubo.crear(); // Guarda en la GPU el cubo que servirá para todos los objetos.
         figuras.crear(); // Sube a la GPU la esfera, el cilindro y el cono.
+        cabina.crear(); // Sube a la GPU la cabina y las ventanillas.
         dibujo2D.crear(); // Compila el shader del HUD y reserva su buffer de vértices.
     }
 
@@ -115,6 +119,7 @@ public class Juego {
         shader.eliminar(); // Libera el programa de shaders si existe.
         cubo.eliminar(); // Libera el VBO y el VAO del cubo si existen.
         figuras.eliminar(); // Libera las mallas redondeadas si existen.
+        cabina.eliminar(); // Libera las mallas de la cabina si existen.
         ventana.destruir(); // Libera callbacks, ventana y GLFW.
     }
 
@@ -193,6 +198,8 @@ public class Juego {
         glClearColor(0.12f, 0.20f, 0.30f, 1); // Define un fondo azul oscuro completamente opaco.
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Borra la imagen y las distancias del cuadro anterior.
         shader.usar(); // Activa los shaders de esta etapa.
+        shader.matriz3("uRotacion", Shader.IDENTIDAD_3X3); // Sin rotación extra: solo las ruedas la cambian (y la restauran).
+        shader.decimal("uAlfa", 1); // Opacidad completa; solo Cubo.cajaTranslucida() la baja (y la restaura). Hoy nadie la usa.
         cubo.enlazar(); // Selecciona los atributos del cubo compartido.
         shader.entero("uMapa", 0); // Selecciona perspectiva normal, no la proyección del minimapa.
         camara.configurar(shader, auto.getX(), auto.getZ(), auto.getAngulo(), ancho, alto); // Actualiza la posición y el objetivo de la cámara.
@@ -219,6 +226,7 @@ public class Juego {
             "Entregas: " + entregas.getEntregas() + "/" + Entregas.DESTINOS.length, // Progreso de la partida.
             "Destino: " + entregas.nombreDestino(), // Parada activa (marca dorada).
             "Sector: " + Mapa.nombreSector(auto.getX(), auto.getZ()), // Zona de la ciudad donde está el auto.
+            "Cámara: " + camara.nombreModo(), // Modo de cámara actual (tecla C).
             "H: ayuda   P: pausa" // Recordatorio de las teclas de la interfaz.
         };
         dibujo2D.comenzar(ancho, alto); // Desactiva la profundidad, activa la mezcla y usa el shader del HUD.
@@ -268,11 +276,11 @@ public class Juego {
     /** Dibuja la escena completa; Minimapa la reutiliza para su segundo pase. */
     private void escena() {
         ciudad.dibujar(); // Dibuja asfalto, calles, edificios y parques.
-        auto.dibujar(cubo); // Añade el modelo del vehículo sobre la ciudad (en todas las cámaras y en el minimapa).
+        auto.dibujar(cubo, figuras, shader, cabina, iluminacion.farosEncendidos()); // Añade el vehículo con ruedas que giran y sus luces; los faros siguen a la tecla F (en todas las cámaras y en el minimapa).
         if (camara.esAerea() && !minimapa.enVistaMapa()) { // Desde arriba el auto se ve chico: se marca con una flecha.
             indicador.dibujar(auto.getX(), auto.getZ(), relojGlobal); // En la cámara de seguimiento no hace falta.
         }
-        trafico.dibujar(); // Añade los vehículos autónomos (con sus luces según día/noche); también aparecen en el minimapa.
+        trafico.dibujar(cabina); // Añade los vehículos autónomos (con sus luces según día/noche); también aparecen en el minimapa.
         iluminacion.dibujarFarolas(); // Añade geometría a la ciudad y al auto: postes y bombillas.
         if (!minimapa.enVistaMapa()) { // Los detalles pequeños solo son necesarios en la vista principal.
             decoracion.dibujar(iluminacion.esNoche(), relojGlobal); // Añade árboles, bancos, ventanas y señalización urbana.

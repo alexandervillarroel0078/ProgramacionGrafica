@@ -104,6 +104,28 @@ public class Cubo {
         cajaGirada(x, y, z, sx, sy, sz, r, g, b, 0); // Reutiliza el dibujo general con un ángulo de cero.
     }
 
+    /**
+     * Caja translúcida y emisiva: se mezcla con lo que hay detrás.
+     * HOY NO LA USA NADIE: los halos de las luces del auto se quitaron. Se conserva, junto con uAlfa en
+     * iluminacion.frag, para las sombras falsas pendientes (rectángulos oscuros translúcidos bajo los objetos), que
+     * necesitan mezcla: con un color casi negro y alfa bajo, oscurece el suelo sin taparlo.
+     * Activa la mezcla alfa (color · alfa + fondo · (1 - alfa)) y NO escribe profundidad (glDepthMask(false)): así la
+     * caja no tapa lo que se dibuje después detrás de ella; conviene dibujarla al final de la escena, después de todo lo
+     * opaco. Al terminar restaura el estado opaco normal de la escena.
+     */
+    public void cajaTranslucida(float x, float y, float z, float sx, float sy, float sz, float r, float g, float b, float alfa, float angulo) {
+        glEnable(GL_BLEND); // Activa la mezcla con el fondo.
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Mezcla clásica por transparencia.
+        glDepthMask(false); // Se prueba contra la profundidad, pero no la escribe.
+        shader.entero("uEmision", 1); // Usa el color tal cual, sin iluminación (el shader solo aplica uAlfa en esa rama).
+        shader.decimal("uAlfa", alfa); // Opacidad de la caja.
+        cajaGirada(x, y, z, sx, sy, sz, r, g, b, angulo); // Dibuja la caja con la orientación indicada.
+        shader.decimal("uAlfa", 1); // Vuelve a opacidad completa.
+        shader.entero("uEmision", 0); // Vuelve al material normal.
+        glDepthMask(true); // Vuelve a escribir profundidad.
+        glDisable(GL_BLEND); // La escena 3D es opaca: sin mezcla.
+    }
+
     /** Dibuja el cubo unitario con escala, giro alrededor de Y, posición y color. */
     public void cajaGirada(float x, float y, float z, float sx, float sy, float sz, float r, float g, float b, float angulo) {
         glBindVertexArray(vao); // Activa el cubo: una Malla (esfera, cilindro, cono) pudo dejar activo su propio VAO.

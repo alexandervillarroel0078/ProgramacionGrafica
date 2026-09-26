@@ -13,6 +13,7 @@ uniform int uNoche; // Vale 1 de noche y 0 de día.
 uniform int uFaros; // Vale 1 cuando los focos están encendidos.
 uniform int uEmision; // Vale 1 si el objeto debe conservar su color sin oscurecerse.
 uniform int uMapa; // Vale 1 durante el dibujo del minimapa de Minimapa.
+uniform float uAlfa; // Opacidad de los objetos emisivos: 1 normalmente. Solo la baja Cubo.cajaTranslucida(), reservada para sombras falsas.
 out vec4 color; // Entrega el color RGBA final al framebuffer.
 
 // ==================== CONSTANTES DE ILUMINACIÓN (valores ajustables) ====================
@@ -62,7 +63,7 @@ vec3 aporteFoco(vec3 origen, vec3 frente, vec3 normal, float atenuacionCuadratic
 // ==================== CÁLCULO DE LUZ EN LA GPU ====================
 void main() { // Se ejecuta para cada fragmento visible de una caja.
     if (uEmision == 1 || uMapa == 1) { // Bombillas y minimapa usan colores directos.
-        color = vec4(uColor, 1.0); // Conserva el color base con opacidad completa.
+        color = vec4(uColor, uAlfa); // Conserva el color base; uAlfa < 1 solo en cajas translúcidas (con mezcla activada).
         return; // Termina el shader sin calcular iluminación.
     }
 

@@ -10,6 +10,7 @@ uniform vec3 uEscala; // Recibe el tamaño de la caja en cada eje.
 uniform vec3 uOjo; // Recibe la posición de la cámara.
 uniform vec3 uObjetivo; // Recibe el punto que observa la cámara.
 uniform float uGiro; // Recibe el giro del objeto alrededor de Y.
+uniform mat3 uRotacion; // Rotación extra, antes del giro en Y (identidad para casi todo; las ruedas giran sobre su eje con ella).
 uniform float uAspecto; // Recibe la relación ancho/alto de la imagen.
 uniform int uMapa; // Selecciona perspectiva (0) o vista superior ortográfica (1).
 uniform float uMitadMapa; // Media anchura visible del minimapa: Mapa.LIMITE más un margen (antes fijo en 37).
@@ -30,8 +31,10 @@ void main() { // OpenGL ejecuta este bloque una vez por vértice.
         0.0, 1.0, 0.0, // Segunda columna: Y permanece vertical.
         seno, 0.0, coseno // Tercera columna: dirección del eje Z rotado.
     ); // Completa la matriz de tres filas y tres columnas.
-    vMundo = giro * (aPos * uEscala) + uPos; // Escala, gira y traslada el vértice al mundo.
-    vNormal = normalize(giro * (aNormal / uEscala)); // Corrige la normal con la inversa transpuesta de escala y giro.
+    // Matriz de modelo completa: primero escala, después uRotacion (cualquier eje), luego el giro en Y y al final la traslación.
+    vMundo = giro * (uRotacion * (aPos * uEscala)) + uPos; // Escala, gira y traslada el vértice al mundo.
+    // Las rotaciones son ortonormales (su inversa transpuesta es ella misma): solo la escala necesita invertirse.
+    vNormal = normalize(giro * (uRotacion * (aNormal / uEscala))); // Corrige la normal con la inversa transpuesta de escala y giro.
 
     if (uMapa == 1) { // Esta rama se usa al dibujar el minimapa en Minimapa.
         float pantallaX = vMundo.x / uMitadMapa; // Ajusta el ancho del mundo al intervalo visible -1 a 1.

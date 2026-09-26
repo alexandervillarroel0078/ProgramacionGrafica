@@ -6,7 +6,8 @@ import static org.lwjgl.opengl.GL33.*; // Importa las funciones OpenGL hasta la 
  * MALLA: figura genérica guardada en la GPU con un VAO y un VBO, con el mismo formato que Cubo:
  * cada vértice tiene posición XYZ y normal XYZ (seis float), y se dibuja como lista de triángulos.
  * Responsable de: subir los vértices a la GPU, dibujar la figura posicionada, escalada, girada y coloreada
- * (como Cubo.caja), liberar la memoria, y GENERAR por fórmulas las figuras base: esfera, cilindro y cono.
+ * (como Cubo.caja), liberar la memoria, y GENERAR por fórmulas las figuras base: esfera, cilindro y cono, además de
+ * figuras extruidas desde un perfil 2D (extruir(), con medidas reales), como la cabina de los autos.
  * Todas las figuras son UNITARIAS y centradas en el origen, igual que el cubo: miden 1 de ancho y 1 de alto
  * (radio 0.5, Y entre -0.5 y 0.5). Así la escala que se pasa al dibujar es directamente el tamaño en el mundo.
  * Se comunica con: Shader (uPos, uEscala, uColor, uGiro) y Figuras, que crea una malla de cada tipo.
@@ -211,6 +212,81 @@ public class Malla {
         float nz = (float) (alto * Math.sin(phi)); // Componente horizontal Z.
         float largo = (float) Math.sqrt(nx * nx + ny * ny + nz * nz); // Longitud para normalizar.
         return new float[] {nx / largo, ny / largo, nz / largo}; // Vector de largo 1.
+    }
+
+    /**
+     * EXTRUSIÓN DE PERFIL: toma un contorno 2D visto de costado y lo "estira" a lo ancho, como una masa que sale por un
+     * molde. perfil es una lista ordenada de puntos {z, y} (el contorno lateral, CONVEXO, en cualquier sentido de giro);
+     * la figura ocupa de X = -ancho/2 a X = +ancho/2 y usa medidas reales (no es unitaria: se dibuja con escala 1).
+     * Caras: las dos tapas laterales (el perfil en X = ±ancho/2, en abanico: n - 2 triángulos cada una) y un
+     * rectángulo (dos triángulos) por cada lado del contorno, que une ambas tapas.
+     * NORMALES POR CARA (flat shading): cada triángulo a-b-c usa la normal (b - a) × (c - a) normalizada, el producto
+     * cruz de dos de sus lados, que es perpendicular al plano del triángulo. Los tres vértices comparten esa normal, así
+     * que cada cara se ve plana y las aristas quedan marcadas (como en una carrocería). El producto cruz puede apuntar
+     * hacia adentro según el orden de los vértices: si apunta hacia el centro de la figura, se invierte. Con un
+     * contorno convexo eso deja todas las normales hacia afuera.
+     * Cantidad de vértices: tapas 2 · 3 · (n - 2) + costados 6 · n = 12 · n - 12 (36 para un perfil de 4 puntos).
+     */
+    public static float[] extruir(float[][] perfil, float ancho) {
+        int n = perfil.length; // Cantidad de puntos del contorno.
+        float mitad = ancho / 2; // Las tapas quedan en X = ±mitad.
+        float centroZ = 0; // Centro del contorno en Z (promedio de los puntos).
+        float centroY = 0; // Centro del contorno en Y.
+        for (float[] p : perfil) { // Suma los puntos.
+            centroZ += p[0] / n; // Promedio en Z.
+            centroY += p[1] / n; // Promedio en Y.
+        }
+        float[] centro = {0, centroY, centroZ}; // Centro de la figura (X = 0, a mitad del ancho).
+        float[] datos = new float[(12 * n - 12) * FLOATS_POR_VERTICE]; // Tamaño exacto del resultado.
+        int i = 0; // Posición de escritura.
+        for (int lado = -1; lado <= 1; lado += 2) { // Tapa izquierda (X = -mitad) y derecha (X = +mitad).
+            float x = lado * mitad; // Plano de la tapa.
+            for (int k = 1; k < n - 1; k++) { // Abanico desde el primer punto del contorno.
+                i = trianguloPlano(datos, i, centro,
+                    new float[] {x, perfil[0][1], perfil[0][0]}, // Primer punto del abanico: {x, y, z}.
+                    new float[] {x, perfil[k][1], perfil[k][0]}, // Punto k.
+                    new float[] {x, perfil[k + 1][1], perfil[k + 1][0]}); // Punto k + 1.
+            }
+        }
+        for (int k = 0; k < n; k++) { // Un rectángulo por cada lado del contorno.
+            float[] p = perfil[k]; // Punto inicial del lado.
+            float[] q = perfil[(k + 1) % n]; // Punto final (el último se une con el primero).
+            float[] a = {-mitad, p[1], p[0]}; // Esquina en la tapa izquierda, punto p.
+            float[] b = {-mitad, q[1], q[0]}; // Tapa izquierda, punto q.
+            float[] c = {mitad, q[1], q[0]}; // Tapa derecha, punto q.
+            float[] d = {mitad, p[1], p[0]}; // Tapa derecha, punto p.
+            i = trianguloPlano(datos, i, centro, a, b, c); // Primer triángulo del rectángulo.
+            i = trianguloPlano(datos, i, centro, a, c, d); // Segundo triángulo: misma normal, mismo plano.
+        }
+        return datos; // Vértices de la figura extruida.
+    }
+
+    /** Escribe un triángulo con normal plana (b - a) × (c - a), orientada hacia afuera del centro de la figura. */
+    private static int trianguloPlano(float[] datos, int i, float[] centro, float[] a, float[] b, float[] c) {
+        float ux = b[0] - a[0]; // Lado a → b, en X.
+        float uy = b[1] - a[1]; // Lado a → b, en Y.
+        float uz = b[2] - a[2]; // Lado a → b, en Z.
+        float vx = c[0] - a[0]; // Lado a → c, en X.
+        float vy = c[1] - a[1]; // Lado a → c, en Y.
+        float vz = c[2] - a[2]; // Lado a → c, en Z.
+        float nx = uy * vz - uz * vy; // Producto cruz u × v, componente X.
+        float ny = uz * vx - ux * vz; // Componente Y.
+        float nz = ux * vy - uy * vx; // Componente Z.
+        float largo = (float) Math.sqrt(nx * nx + ny * ny + nz * nz); // Largo del producto cruz (el doble del área).
+        nx /= largo; // Normaliza: largo 1.
+        ny /= largo; // Normaliza.
+        nz /= largo; // Normaliza.
+        float mx = (a[0] + b[0] + c[0]) / 3 - centro[0]; // Del centro de la figura al centro del triángulo, en X.
+        float my = (a[1] + b[1] + c[1]) / 3 - centro[1]; // En Y.
+        float mz = (a[2] + b[2] + c[2]) / 3 - centro[2]; // En Z.
+        if (nx * mx + ny * my + nz * mz < 0) { // La normal apunta hacia adentro...
+            nx = -nx; // ...se invierte.
+            ny = -ny; // ...se invierte.
+            nz = -nz; // ...se invierte.
+        }
+        i = vertice(datos, i, a[0], a[1], a[2], nx, ny, nz); // Vértice a con la normal de la cara.
+        i = vertice(datos, i, b[0], b[1], b[2], nx, ny, nz); // Vértice b.
+        return vertice(datos, i, c[0], c[1], c[2], nx, ny, nz); // Vértice c.
     }
 
     /** Escribe un vértice (posición y normal) en el arreglo y devuelve la próxima posición libre. */

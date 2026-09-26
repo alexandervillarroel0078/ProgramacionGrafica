@@ -106,6 +106,17 @@ public class Shader {
         glUniform4f(uniform(nombre), x, y, z, w); // Escribe las cuatro componentes en el programa activo.
     }
 
+    /**
+     * Matriz identidad 3 × 3 en orden de columnas (el que usa OpenGL): no rota nada.
+     * uRotacion debe valer esto para todo lo que no sea una rueda; un uniform sin asignar vale 0 y aplastaría la figura.
+     */
+    public static final float[] IDENTIDAD_3X3 = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+
+    /** Envía una matriz 3 × 3 (nueve números, columna por columna) a una variable mat3 del shader. */
+    public void matriz3(String nombre, float[] columnas) {
+        glUniformMatrix3fv(uniform(nombre), false, columnas); // false: los datos ya están por columnas, no hay que trasponer.
+    }
+
     /** Envía tres números reales a una variable vec3 del shader. */
     public void vector(String nombre, float x, float y, float z) {
         glUniform3f(uniform(nombre), x, y, z); // Escribe las tres componentes en el programa activo.

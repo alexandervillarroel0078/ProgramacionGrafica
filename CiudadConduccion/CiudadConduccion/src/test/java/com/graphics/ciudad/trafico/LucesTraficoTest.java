@@ -3,6 +3,7 @@ package com.graphics.ciudad.trafico; // Prueba las luces del tráfico desde su m
 import com.graphics.ciudad.iluminacion.Iluminacion; // Dueña del estado día/noche (tecla N) y de los faros del jugador (F).
 import com.graphics.ciudad.motor.Cubo; // Se crea sin tocar la GPU: solo guarda referencias.
 import com.graphics.ciudad.motor.Shader; // Se crea sin tocar la GPU: OpenGL se usa recién en crear().
+import com.graphics.ciudad.vehiculo.LucesVehiculo; // Ubicación de las luces, compartida con el jugador.
 import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usadas por Maven.
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_F; // Tecla de los faros del jugador.
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_N; // Tecla de día/noche.
@@ -18,7 +19,10 @@ public class LucesTraficoTest extends TestCase {
     protected void setUp() {
         Shader shader = new Shader(); // Programa sin compilar: la prueba no dibuja.
         Cubo cubo = new Cubo(shader); // Geometría sin subir a la GPU.
-        iluminacion = new Iluminacion(shader, cubo); // Empieza de noche y con los faros del jugador encendidos.
+        iluminacion = new Iluminacion(shader, cubo); // Empieza de día (NOCHE_AL_INICIAR) y con los faros del jugador encendidos.
+        if (!iluminacion.esNoche()) { // Las pruebas parten de noche, que es cuando el tráfico enciende sus luces.
+            iluminacion.tecla(GLFW_KEY_N); // Igual que presionar N.
+        }
         trafico = new Trafico(shader, cubo, iluminacion::esNoche); // El tráfico consulta a Iluminacion, sin copiar el estado.
     }
 
@@ -32,9 +36,21 @@ public class LucesTraficoTest extends TestCase {
         return true; // Todos coinciden.
     }
 
+    /** El juego arranca de día, como conviene para la demo, y con el tráfico con las luces apagadas. */
+    public void testArrancaDeDia() {
+        Shader shader = new Shader(); // Programa sin compilar.
+        Iluminacion recienCreada = new Iluminacion(shader, new Cubo(shader)); // Estado inicial real del juego.
+        assertEquals(Iluminacion.NOCHE_AL_INICIAR, recienCreada.esNoche()); // Respeta la constante.
+        assertFalse(recienCreada.esNoche()); // La demo empieza de día.
+        Trafico traficoDeDia = new Trafico(shader, new Cubo(shader), recienCreada::esNoche); // Tráfico conectado a esa iluminación.
+        for (Vehiculo v : traficoDeDia.getVehiculos()) { // Cada vehículo.
+            assertFalse(v.lucesEncendidas()); // De día arranca con las luces apagadas.
+        }
+    }
+
     /** Con noche activa todas las luces están encendidas; con día, todas apagadas. */
     public void testLucesSiguenDiaYNoche() {
-        assertTrue(iluminacion.esNoche()); // El juego empieza de noche.
+        assertTrue(iluminacion.esNoche()); // setUp dejó la escena de noche.
         assertTrue(todas(true)); // De noche: encendidas.
         iluminacion.tecla(GLFW_KEY_N); // Cambia a día, igual que presionar N.
         assertFalse(iluminacion.esNoche()); // Ahora es de día.
@@ -56,7 +72,7 @@ public class LucesTraficoTest extends TestCase {
 
     /** Los faros acompañan la posición y la orientación del vehículo, también durante los giros. */
     public void testFarosSiguenAlVehiculo() {
-        float distanciaEsperada = (float) Math.hypot(Vehiculo.LADO_LUZ, Vehiculo.FRENTE_LUZ); // Del centro a cada faro.
+        float distanciaEsperada = (float) Math.hypot(LucesVehiculo.LADO_LUZ, LucesVehiculo.FRENTE_LUZ); // Del centro a cada faro.
         for (int paso = 0; paso < 60 * 30; paso++) { // Treinta segundos: incluye varias esquinas.
             trafico.actualizar(1f / 60, 1000, 1000); // Jugador lejos.
             for (Vehiculo v : trafico.getVehiculos()) { // Revisa cada vehículo.
@@ -67,7 +83,7 @@ public class LucesTraficoTest extends TestCase {
                     float relX = faro[0] - v.getX(); // Vector del centro al faro, en X.
                     float relZ = faro[2] - v.getZ(); // Vector del centro al faro, en Z.
                     assertEquals(distanciaEsperada, (float) Math.hypot(relX, relZ), 1e-3f); // Siempre a la misma distancia.
-                    assertEquals(-Vehiculo.FRENTE_LUZ, relX * frenteX + relZ * frenteZ, 1e-3f); // Siempre adelante, girando con él.
+                    assertEquals(-LucesVehiculo.FRENTE_LUZ, relX * frenteX + relZ * frenteZ, 1e-3f); // Siempre adelante, girando con él.
                 }
             }
         }

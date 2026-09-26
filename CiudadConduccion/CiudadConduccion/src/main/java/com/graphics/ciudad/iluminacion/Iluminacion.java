@@ -23,7 +23,8 @@ public class Iluminacion {
     // ==================== 1. ESTADO Y POSICIONES DE LAS LUCES ====================
     private final Shader shader; // Programa que recibe los datos de iluminación.
     private final Cubo cubo; // Geometría con la que se dibujan las farolas.
-    private boolean noche = true; // Inicia la escena con iluminación nocturna.
+    public static final boolean NOCHE_AL_INICIAR = false; // La demo arranca de día (se ve todo); N cambia a noche.
+    private boolean noche = NOCHE_AL_INICIAR; // Inicia la escena de día; la tecla N alterna la iluminación nocturna.
     private boolean faros = true; // Inicia los focos del auto encendidos.
     public static final int MAX_LUCES = 16; // Tamaño del arreglo uLuces[16] del shader: no se pueden enviar más farolas.
 

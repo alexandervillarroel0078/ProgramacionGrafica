@@ -63,6 +63,43 @@ public class MallaTest extends TestCase {
         }
     }
 
+    /** Extrusión de un perfil de 4 puntos: 12 · 4 - 12 = 36 vértices, normales unitarias hacia afuera, tapas en ±X. */
+    public void testExtrusion() {
+        float[][] trapecio = {{0.78f, 0.9f}, {-0.62f, 0.9f}, {-0.12f, 1.4f}, {0.55f, 1.4f}}; // Perfil {z, y} de 4 puntos.
+        float[][] alReves = {trapecio[3], trapecio[2], trapecio[1], trapecio[0]}; // El mismo contorno en el otro sentido de giro.
+        for (float[][] perfil : new float[][][] {trapecio, alReves}) { // Ambos sentidos deben dar normales hacia afuera.
+            float[] datos = Malla.extruir(perfil, 1.4f); // Figura extruida de ancho 1.4.
+            assertEquals(36 * Malla.FLOATS_POR_VERTICE, datos.length); // 36 vértices para 4 puntos.
+            float centroY = 0; // Centro del perfil en Y.
+            float centroZ = 0; // Centro del perfil en Z.
+            for (float[] p : perfil) { // Promedio de los puntos.
+                centroY += p[1] / perfil.length; // En Y.
+                centroZ += p[0] / perfil.length; // En Z.
+            }
+            for (int i = 0; i < datos.length; i += 3 * Malla.FLOATS_POR_VERTICE) { // Recorre triángulo por triángulo.
+                float mx = 0; // Centro del triángulo.
+                float my = 0;
+                float mz = 0;
+                for (int v = 0; v < 3; v++) { // Sus tres vértices.
+                    int k = i + v * Malla.FLOATS_POR_VERTICE; // Inicio del vértice.
+                    float largo = (float) Math.sqrt(datos[k + 3] * datos[k + 3] + datos[k + 4] * datos[k + 4] + datos[k + 5] * datos[k + 5]); // Largo de la normal.
+                    assertEquals(1f, largo, 1e-4f); // Normal unitaria.
+                    assertEquals(datos[i + 3], datos[k + 3], 0f); // Flat shading: los tres vértices comparten la normal (X)...
+                    assertEquals(datos[i + 4], datos[k + 4], 0f); // ...(Y)...
+                    assertEquals(datos[i + 5], datos[k + 5], 0f); // ...(Z).
+                    mx += datos[k] / 3; // Centro del triángulo.
+                    my += datos[k + 1] / 3;
+                    mz += datos[k + 2] / 3;
+                }
+                float haciaAfuera = datos[i + 3] * mx + datos[i + 4] * (my - centroY) + datos[i + 5] * (mz - centroZ); // Normal · (centro del triángulo - centro de la figura).
+                assertTrue(haciaAfuera > 0); // La normal apunta hacia afuera.
+                if (Math.abs(datos[i + 3]) > 0.5f) { // Triángulo de una tapa.
+                    assertEquals(Math.signum(mx), datos[i + 3], 1e-6f); // La tapa en X = +0.7 mira a +X y la otra a -X.
+                }
+            }
+        }
+    }
+
     /** Malla informa la cantidad de vértices de los datos que recibe (sin usar la GPU). */
     public void testCantidadDeVertices() {
         Figuras figuras = new Figuras(new Shader()); // Genera las tres figuras sin OpenGL.
