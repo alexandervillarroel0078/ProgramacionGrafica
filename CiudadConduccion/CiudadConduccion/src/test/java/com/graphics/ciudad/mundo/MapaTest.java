@@ -1,6 +1,5 @@
 package com.graphics.ciudad.mundo; // Prueba el plano de la ciudad desde su mismo paquete.
 
-import com.graphics.ciudad.iluminacion.Iluminacion; // Aporta las posiciones de las farolas.
 import com.graphics.ciudad.juego.Entregas; // Aporta las posiciones de las paradas.
 import com.graphics.ciudad.vehiculo.Auto; // Aporta la posición inicial del vehículo.
 import java.util.ArrayDeque; // Cola de celdas pendientes para el recorrido en anchura (BFS).
@@ -89,16 +88,12 @@ public class MapaTest extends TestCase {
         assertEquals(-1, Mapa.sector(0, Mapa.LIMITE + 1)); // Fuera del mapa no hay sector.
     }
 
-    /** Comprueba que destinos, farolas y posición inicial caen en celdas de calle. */
+    /** Comprueba que destinos y posición inicial caen en celdas de calle. */
     public void testPosicionesSobreCalles() {
         for (float[] destino : Entregas.DESTINOS) { // Revisa cada parada.
             assertTrue("destino " + destino[0] + "," + destino[1], Mapa.esCalleEn(destino[0], destino[1])); // La parada debe estar sobre calle.
         }
-        assertTrue(Iluminacion.LUCES.length >= 9); // Exige al menos nueve farolas.
-        assertTrue(Iluminacion.LUCES.length <= Iluminacion.MAX_LUCES); // No puede superar el arreglo uLuces del shader.
-        for (float[] luz : Iluminacion.LUCES) { // Revisa cada farola.
-            assertTrue("farola " + luz[0] + "," + luz[2], Mapa.esCalleEn(luz[0], luz[2])); // X y Z de la farola deben caer en calle.
-        }
+        // Las farolas ya no van en la calle sino en la vereda: su ubicación se prueba en iluminacion/FarolasTest.
         assertTrue(Mapa.esCalleEn(Auto.X_INICIAL, Auto.Z_INICIAL)); // El auto debe comenzar sobre calle.
         assertEquals(Entregas.DESTINOS.length, Entregas.NOMBRES_DESTINOS.length); // Cada parada tiene su nombre para el título.
     }

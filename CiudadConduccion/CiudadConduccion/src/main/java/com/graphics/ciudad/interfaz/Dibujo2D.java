@@ -1,8 +1,8 @@
 package com.graphics.ciudad.interfaz; // Agrupa la interfaz dentro de la ventana: dibujo 2D y HUD.
 
 import com.graphics.ciudad.motor.Shader; // Programa GLSL propio del HUD (hud.vert / hud.frag).
+import com.graphics.ciudad.motor.Texto; // Conversión a ASCII compartida con los carteles 3D.
 import java.nio.ByteBuffer; // Memoria nativa donde STBEasyFont escribe los vértices del texto.
-import java.text.Normalizer; // Separa las tildes de las letras para convertir el texto a ASCII.
 import org.lwjgl.BufferUtils; // Reserva memoria nativa en el orden de bytes de la plataforma.
 import static org.lwjgl.opengl.GL33.*; // Importa las funciones OpenGL hasta la versión 3.3.
 import static org.lwjgl.stb.STBEasyFont.*; // stb_easy_font_print y stb_easy_font_width.
@@ -135,14 +135,6 @@ public class Dibujo2D {
 
     /** Convierte el texto a ASCII: quita tildes (á → a, ñ → n) y reemplaza otros símbolos por '?'. */
     public static String aAscii(String texto) {
-        String sinTildes = Normalizer.normalize(texto, Normalizer.Form.NFD).replaceAll("\\p{M}", ""); // Separa y borra las marcas.
-        StringBuilder ascii = new StringBuilder(sinTildes.length()); // Resultado en construcción.
-        for (char letra : sinTildes.toCharArray()) { // Revisa cada carácter.
-            if (letra == '¡' || letra == '¿') { // Los signos de apertura del español no existen en ASCII.
-                continue; // Se omiten.
-            }
-            ascii.append(letra >= 32 && letra < 127 ? letra : '?'); // Conserva lo imprimible; lo demás se marca con '?'.
-        }
-        return ascii.toString(); // Texto seguro para STBEasyFont.
+        return Texto.aAscii(texto); // La conversión vive en motor/Texto, compartida con los carteles 3D.
     }
 }

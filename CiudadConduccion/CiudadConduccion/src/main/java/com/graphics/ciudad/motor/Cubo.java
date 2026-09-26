@@ -106,6 +106,7 @@ public class Cubo {
 
     /** Dibuja el cubo unitario con escala, giro alrededor de Y, posición y color. */
     public void cajaGirada(float x, float y, float z, float sx, float sy, float sz, float r, float g, float b, float angulo) {
+        glBindVertexArray(vao); // Activa el cubo: una Malla (esfera, cilindro, cono) pudo dejar activo su propio VAO.
         shader.vector("uPos", x, y, z); // Envía la posición del centro de la caja en el mundo.
         shader.vector("uEscala", sx, sy, sz); // Envía el ancho, alto y profundidad de la caja.
         shader.vector("uColor", r, g, b); // Envía las intensidades roja, verde y azul del material.

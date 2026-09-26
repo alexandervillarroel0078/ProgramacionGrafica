@@ -1,29 +1,119 @@
 package com.graphics.ciudad.mundo; // Agrupa lo que forma la ciudad: mapa, edificios, decoración y semáforos.
 
-import com.graphics.ciudad.motor.Cubo; // Dibuja árboles, bancos, ventanas y franjas.
+import com.graphics.ciudad.motor.Cubo; // Dibuja ventanas y franjas.
+import com.graphics.ciudad.motor.Figuras; // Esfera, cilindro y cono para los parques.
 import com.graphics.ciudad.motor.Shader; // Activa la emisión de las ventanas nocturnas.
+import java.util.ArrayList; // Lista de ubicaciones de los pasos peatonales.
+import java.util.Collections; // Publica la lista sin permitir modificarla desde afuera.
+import java.util.List; // Tipo de la lista de ubicaciones.
 
 /**
  * DECORACION: detalles urbanos de la ciudad terminada.
- * Responsable de: decidir qué decoración corresponde a cada parcela del Mapa y dibujar parques (árboles y
- * banco), ventanas iluminadas, pasos peatonales, semáforos y señales de tránsito.
- * Se comunica con: Mapa (recorre las celdas), Cubo y Shader (dibujo y emisión), Semaforo y Senalizacion (en cada manzana).
+ * Responsable de: decidir qué decoración corresponde a cada parcela del Mapa y dibujar parques (delegados en Parque:
+ * senderos, fuente, árboles y bancos), ventanas iluminadas y pasos peatonales; delega en Senalizacion los semáforos, PARE y carteles.
+ * Se comunica con: Mapa (celdas, intersecciones y parques), Cubo y Shader (dibujo y emisión), Senalizacion (señales y
+ * cruces con semáforo) y Ciudad (que corta la línea amarilla con hayPasoSobre()).
  * Juego la dibuja solo en la vista principal; en el minimapa se omite, y le pasa el estado de noche de
  * Iluminacion y el reloj global de Juego (los semáforos siguen ciclando aunque la partida termine).
+ *
+ * PASOS PEATONALES: van donde el peatón realmente cruza y el conductor espera encontrarlo:
+ *  - en CADA acceso de las intersecciones con semáforo (Senalizacion.INTERSECCIONES_SEMAFORO): el semáforo detiene
+ *    a los autos y da tiempo a cruzar; el cabezal está justo al borde de estas franjas, donde el auto frena;
+ *  - junto a cada parque: en la calle vecina al norte y en la vecina al oeste, pegados al cruce siguiente, porque
+ *    los parques atraen peatones.
+ * Cada paso ocupa la celda de calle vecina a la intersección, pegado al borde del cruce (sin invadirlo), mide
+ * LARGO_PASO en el sentido de circulación y cubre la calle completa de vereda a vereda. Hay pasos en calles norte-sur y
+ * este-oeste. Las franjas son paralelas al sentido de circulación (senda de cebra) y Ciudad corta la línea amarilla
+ * donde hay un paso.
  */
 public class Decoracion {
 
+    // ==================== PASOS PEATONALES (valores ajustables) ====================
+    public static final float LARGO_PASO = 3; // Largo del paso en el sentido de circulación: es el largo de cada franja.
+    public static final int FRANJAS_PASO = 6; // Franjas blancas por paso.
+    public static final float SEPARACION_FRANJAS = 1.65f; // Distancia entre centros de franjas vecinas (uniforme).
+    public static final float ANCHO_FRANJA = 0.9f; // Ancho de cada franja; 5 · 1.65 + 0.9 = 9.15 de los 10 de la calle: de vereda a vereda.
+    public static final float ALTURA_FRANJA = 0.03f; // Centro de la pintura: la franja va de 0.02 a 0.04, apenas sobre el asfalto (Y = 0).
+    public static final float GROSOR_FRANJA = 0.02f; // Espesor de la pintura; separada del asfalto para evitar z-fighting.
+    // Cada ubicación es {centroX, centroZ, ejeX}: ejeX = 1 si la calle va de oeste a este (franjas a lo largo de X),
+    // 0 si va de norte a sur (franjas a lo largo de Z). Se genera desde INTERSECCIONES_SEMAFORO y la lista de parques.
+    public static final List<float[]> UBICACIONES_PASOS = Collections.unmodifiableList(calcularUbicaciones());
+
     private final Shader shader; // Programa que recibe el interruptor de emisión.
     private final Cubo cubo; // Geometría con la que se construyen los detalles.
-    private final Semaforo semaforo; // Dibuja los semáforos junto a cada manzana.
-    private final Senalizacion senalizacion; // Dibuja las señales de PARE y de dirección en las esquinas.
+    private final Senalizacion senalizacion; // Dibuja semáforos, PARE y carteles de sector.
+    private final Parque parque; // Dibuja senderos, fuente, árboles y bancos de cada parque.
 
-    /** Recibe el shader y el cubo compartidos y prepara el semáforo reutilizable. */
-    public Decoracion(Shader shader, Cubo cubo) {
+    /** Recibe el shader, el cubo y las figuras compartidas, y prepara la señalización y los parques. */
+    public Decoracion(Shader shader, Cubo cubo, Figuras figuras) {
         this.shader = shader; // Guarda el programa para cambiar uEmision.
         this.cubo = cubo; // Guarda la geometría compartida.
-        this.semaforo = new Semaforo(shader, cubo); // Un mismo objeto dibuja todos los semáforos.
-        this.senalizacion = new Senalizacion(cubo); // Un mismo objeto dibuja todas las señales.
+        this.senalizacion = new Senalizacion(shader, cubo); // Un mismo objeto dibuja todas las señales.
+        this.parque = new Parque(shader, cubo, figuras); // Calcula una vez la disposición de todos los parques.
+    }
+
+    // ==================== UBICACIÓN DE LOS PASOS PEATONALES ====================
+
+    /** Genera los pasos: uno por acceso de cada cruce con semáforo y hasta dos junto a cada parque, sin repetir. */
+    private static List<float[]> calcularUbicaciones() {
+        List<float[]> pasos = new ArrayList<>(); // Ubicaciones encontradas.
+        for (int[] cruce : Senalizacion.INTERSECCIONES_SEMAFORO) { // Cruces con semáforo (Centro).
+            for (int[] acceso : Mapa.accesos(cruce[0], cruce[1])) { // Cada calle que llega.
+                agregarSinRepetir(pasos, pasoEnAcceso(cruce[0], cruce[1], acceso[0], acceso[1])); // Paso en ese acceso.
+            }
+        }
+        for (int[] parque : Mapa.parques()) { // Parques del mapa.
+            int fila = parque[0]; // Fila del parque.
+            int columna = parque[1]; // Columna del parque.
+            // Calle al norte del parque (fila - 1), pegado al cruce del este: acceso "desde el oeste" de ese cruce.
+            if (Mapa.esInterseccion(fila - 1, columna + 1) && Mapa.esCalleSegura(fila - 1, columna)) { // Existe ese tramo.
+                agregarSinRepetir(pasos, pasoEnAcceso(fila - 1, columna + 1, 0, -1)); // Paso en la calle norte.
+            }
+            // Calle al oeste del parque (columna - 1), pegado al cruce del sur: acceso "desde el norte" de ese cruce.
+            if (Mapa.esInterseccion(fila + 1, columna - 1) && Mapa.esCalleSegura(fila, columna - 1)) { // Existe ese tramo.
+                agregarSinRepetir(pasos, pasoEnAcceso(fila + 1, columna - 1, -1, 0)); // Paso en la calle oeste.
+            }
+        }
+        return pasos; // Lista completa de pasos.
+    }
+
+    /** Paso {x, z, ejeX} en el acceso {dFila, dColumna} de un cruce: en la celda vecina, pegado al borde del cruce. */
+    public static float[] pasoEnAcceso(int fila, int columna, int dFila, int dColumna) {
+        float distancia = Mapa.TAM_CELDA / 2 + LARGO_PASO / 2; // Del centro del cruce al centro del paso: 5 + 1.5.
+        float x = Mapa.centro(columna) + dColumna * distancia; // Se aleja del cruce por la calle del acceso (columnas = X).
+        float z = Mapa.centro(fila) + dFila * distancia; // Igual en Z (filas = Z).
+        float ejeX = dColumna != 0 ? 1 : 0; // Si el acceso cambia de columna, la calle va de oeste a este.
+        return new float[] {x, z, ejeX}; // Ubicación del paso.
+    }
+
+    /** Agrega un paso a la lista si no hay otro en el mismo lugar (un cruce con semáforo puede estar junto a un parque). */
+    private static void agregarSinRepetir(List<float[]> pasos, float[] nuevo) {
+        for (float[] paso : pasos) { // Revisa los pasos existentes.
+            if (Math.abs(paso[0] - nuevo[0]) < 0.01f && Math.abs(paso[1] - nuevo[1]) < 0.01f) { // Misma posición.
+                return; // Ya existe: no se duplica.
+            }
+        }
+        pasos.add(nuevo); // Paso nuevo.
+    }
+
+    /** Media extensión {mitadX, mitadZ} del rectángulo que ocupa un paso con el eje indicado. */
+    public static float[] mitadesPaso(boolean ejeX) {
+        float largo = LARGO_PASO / 2; // Mitad del largo del paso en el sentido de circulación.
+        float travesia = ((FRANJAS_PASO - 1) * SEPARACION_FRANJAS + ANCHO_FRANJA) / 2; // Mitad de lo que cubren las franjas a lo ancho de la calle.
+        return ejeX ? new float[] {largo, travesia} : new float[] {travesia, largo}; // Intercambia según la orientación.
+    }
+
+    /** Indica si un rectángulo centrado en (x, z) con medias medidas (mitadX, mitadZ) toca algún paso peatonal. */
+    public static boolean hayPasoSobre(float x, float z, float mitadX, float mitadZ) {
+        for (float[] paso : UBICACIONES_PASOS) { // Revisa cada paso.
+            float[] mitad = mitadesPaso(paso[2] == 1); // Tamaño del paso según su orientación.
+            boolean solapaX = Math.abs(x - paso[0]) < mitad[0] + mitadX; // Los intervalos en X se superponen.
+            boolean solapaZ = Math.abs(z - paso[1]) < mitad[1] + mitadZ; // Los intervalos en Z se superponen.
+            if (solapaX && solapaZ) { // Dos rectángulos se tocan si se superponen en ambos ejes.
+                return true; // Hay un paso debajo.
+            }
+        }
+        return false; // Ningún paso toca el rectángulo.
     }
 
     // ==================== DECORACIÓN DE LAS MANZANAS ====================
@@ -36,35 +126,18 @@ public class Decoracion {
                 float z = Mapa.centro(fila); // Obtiene el centro de la parcela en profundidad.
                 int tipo = Mapa.tipo(fila, columna); // Lee el contenido de la celda.
                 if (tipo == Mapa.PARQUE) { // Detecta una parcela de parque.
-                    dibujarParque(x, z); // Añade árboles y un banco.
+                    parque.dibujar(fila, columna, noche); // Añade senderos, fuente, árboles y bancos propios de este parque.
                 }
                 if (tipo == Mapa.EDIFICIO) { // Detecta una parcela con edificio.
                     float altura = Mapa.alturaEdificio(fila, columna); // Recupera la misma altura calculada en Ciudad.
                     dibujarVentanas(x, z, altura, noche); // Coloca ventanas en sus cuatro fachadas.
                 }
-                if (tipo != Mapa.CALLE) { // La señalización se coloca junto a las manzanas, no en celdas de calle.
-                    dibujarPasoPeatonal(x, z); // Añade el cruce pintado sobre la calle contigua.
-                    semaforo.dibujar(x + 4, z - 4, tiempo); // Coloca el semáforo dentro de la acera.
-                    senalizacion.dibujarEnManzana(x, z); // Añade PARE y la señal de dirección en las esquinas del sur.
-                }
             }
         }
-    }
-
-    /** Construye cuatro árboles y un banco utilizando cajas. */
-    private void dibujarParque(float x, float z) {
-        float[] posiciones = {-2.5f, 2.5f}; // Define desplazamientos respecto al centro de la parcela.
-        for (float desplazamientoX : posiciones) { // Selecciona el lado izquierdo o derecho del parque.
-            for (float desplazamientoZ : posiciones) { // Selecciona el lado delantero o trasero.
-                float arbolX = x + desplazamientoX; // Convierte el desplazamiento local en coordenada X mundial.
-                float arbolZ = z + desplazamientoZ; // Convierte el desplazamiento local en coordenada Z mundial.
-                cubo.caja(arbolX, 1.2f, arbolZ, 0.35f, 2, 0.35f, 0.38f, 0.22f, 0.12f); // Dibuja el tronco marrón.
-                cubo.caja(arbolX, 2.7f, arbolZ, 2, 2.3f, 2, 0.12f, 0.42f, 0.23f); // Dibuja la copa verde del árbol.
-            }
+        senalizacion.dibujar(tiempo); // Semáforos del Centro, PARE y carteles de sector, en sus ubicaciones calculadas.
+        for (float[] paso : UBICACIONES_PASOS) { // Los pasos se dibujan una vez cada uno, desde la lista.
+            dibujarPasoPeatonal(paso[0], paso[1], paso[2] == 1); // Añade el cruce pintado de vereda a vereda.
         }
-        cubo.caja(x, 0.65f, z, 3, 0.25f, 0.8f, 0.55f, 0.30f, 0.13f); // Dibuja el asiento de madera del banco.
-        cubo.caja(x, 0.4f, z, 2, 0.6f, 0.35f, 0.22f, 0.24f, 0.24f); // Dibuja el soporte oscuro del banco.
-        cubo.caja(x, 1, z + 0.35f, 3, 0.7f, 0.15f, 0.55f, 0.30f, 0.13f); // Dibuja el respaldo detrás del asiento.
     }
 
     /** Distribuye ventanas por pisos en las cuatro paredes del edificio. */
@@ -84,10 +157,15 @@ public class Decoracion {
         shader.entero("uEmision", 0); // Restablece la iluminación normal de los demás elementos.
     }
 
-    /** Dibuja las franjas blancas sobre la calle contigua al norte de la manzana. */
-    private void dibujarPasoPeatonal(float x, float z) {
-        for (int desplazamiento = -3; desplazamiento <= 3; desplazamiento++) { // Coloca siete franjas paralelas.
-            cubo.caja(x + desplazamiento, 0.045f, z - 8, 0.45f, 0.04f, 2, 0.85f, 0.87f, 0.83f); // Eleva la pintura un poco sobre el suelo.
+    /** Dibuja las franjas blancas de un paso: paralelas al sentido de circulación y repartidas a lo ancho de la calle. */
+    private void dibujarPasoPeatonal(float x, float z, boolean ejeX) {
+        for (int i = 0; i < FRANJAS_PASO; i++) { // Coloca FRANJAS_PASO franjas paralelas.
+            float desplazamiento = (i - (FRANJAS_PASO - 1) / 2f) * SEPARACION_FRANJAS; // Centradas en el eje de la calle, separación uniforme.
+            if (ejeX) { // Calle de oeste a este: la franja es larga en X y se reparten a lo ancho (Z).
+                cubo.caja(x, ALTURA_FRANJA, z + desplazamiento, LARGO_PASO, GROSOR_FRANJA, ANCHO_FRANJA, 0.85f, 0.87f, 0.83f); // Eleva la pintura un poco sobre el suelo.
+            } else { // Calle de norte a sur: la franja es larga en Z y se reparten a lo ancho (X).
+                cubo.caja(x + desplazamiento, ALTURA_FRANJA, z, ANCHO_FRANJA, GROSOR_FRANJA, LARGO_PASO, 0.85f, 0.87f, 0.83f); // Misma pintura, girada.
+            }
         }
     }
 }

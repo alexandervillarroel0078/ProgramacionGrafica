@@ -8,6 +8,7 @@ import com.graphics.ciudad.juego.Entregas; // Reglas y progreso de la partida.
 import com.graphics.ciudad.juego.Minimapa; // Segundo pase de dibujo desde arriba.
 import com.graphics.ciudad.motor.Camara; // Cámara de seguimiento y aérea.
 import com.graphics.ciudad.motor.Cubo; // Geometría compartida (VAO/VBO).
+import com.graphics.ciudad.motor.Figuras; // Esfera, cilindro y cono (mallas redondeadas).
 import com.graphics.ciudad.motor.Shader; // Programa GLSL y envío de uniforms.
 import com.graphics.ciudad.motor.Ventana; // Ventana GLFW, teclado y presentación.
 import com.graphics.ciudad.mundo.Ciudad; // Asfalto, calles, edificios y parques.
@@ -45,7 +46,8 @@ public class Juego {
     private final Cubo cubo = new Cubo(shader); // Geometría única con la que se construye todo.
     private final Camara camara = new Camara(Mapa.LIMITE); // Cámara de seguimiento o vista aérea ajustada al tamaño del mapa.
     private final Ciudad ciudad = new Ciudad(cubo); // Ciudad generada a partir del Mapa.
-    private final Decoracion decoracion = new Decoracion(shader, cubo); // Detalles urbanos de la ciudad terminada.
+    private final Figuras figuras = new Figuras(shader); // Mallas redondeadas generadas por fórmulas.
+    private final Decoracion decoracion = new Decoracion(shader, cubo, figuras); // Detalles urbanos de la ciudad terminada.
     private final Auto auto = new Auto(); // Vehículo del jugador; no necesita OpenGL para existir.
     private final Iluminacion iluminacion = new Iluminacion(shader, cubo); // Día/noche, farolas y faros.
     private final Entregas entregas = new Entregas(shader, cubo); // Destinos, progreso y cronómetro.
@@ -79,6 +81,7 @@ public class Juego {
         ventana.crear(NOMBRE_JUEGO, this::tecla); // Crea la ventana y entrega cada tecla presionada a tecla().
         shader.crear(SHADER_VERTICES, SHADER_FRAGMENTOS); // Compila y enlaza los shaders que transforman y colorean los vértices.
         cubo.crear(); // Guarda en la GPU el cubo que servirá para todos los objetos.
+        figuras.crear(); // Sube a la GPU la esfera, el cilindro y el cono.
         dibujo2D.crear(); // Compila el shader del HUD y reserva su buffer de vértices.
     }
 
@@ -111,6 +114,7 @@ public class Juego {
         dibujo2D.eliminar(); // Libera el shader y el buffer del HUD si existen.
         shader.eliminar(); // Libera el programa de shaders si existe.
         cubo.eliminar(); // Libera el VBO y el VAO del cubo si existen.
+        figuras.eliminar(); // Libera las mallas redondeadas si existen.
         ventana.destruir(); // Libera callbacks, ventana y GLFW.
     }
 

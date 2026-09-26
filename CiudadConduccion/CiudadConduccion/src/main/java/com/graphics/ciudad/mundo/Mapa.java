@@ -1,5 +1,8 @@
 package com.graphics.ciudad.mundo; // Agrupa lo que forma la ciudad: mapa, edificios, decoración y semáforos.
 
+import java.util.ArrayList; // Listas de intersecciones, accesos y parques.
+import java.util.List; // Tipo de esas listas.
+
 /**
  * MAPA: plano de la ciudad descrito como una matriz de celdas.
  * Responsable de: guardar MAPA (0 = calle, 1 = edificio, 2 = parque), el tamaño de cada celda, los límites
@@ -104,6 +107,72 @@ public final class Mapa {
     public static String nombreSector(float x, float z) {
         int indice = sector(x, z); // Busca el sector.
         return indice >= 0 ? NOMBRES_SECTORES[indice] : "Fuera de la ciudad"; // Nombre o aviso.
+    }
+
+    // ==================== INTERSECCIONES, ACCESOS Y PARQUES ====================
+    // Una INTERSECCIÓN es una celda de calle que tiene calle hacia el norte o el sur Y calle hacia el este o el oeste:
+    // allí se cruzan dos calles. Con este MAPA son las celdas de fila y columna pares (36 en total).
+    // Un ACCESO es cada calle que llega a una intersección; se describe con el desplazamiento {dFila, dColumna} de la
+    // celda vecina por la que llegan los autos: {-1, 0} = llegan desde el norte, {1, 0} = desde el sur,
+    // {0, -1} = desde el oeste y {0, 1} = desde el este.
+    public static final int[][] VECINOS = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}}; // Norte, sur, oeste y este.
+
+    /** Indica si (fila, columna) está dentro de la matriz y es calle. */
+    public static boolean esCalleSegura(int fila, int columna) {
+        boolean dentro = fila >= 0 && fila < MAPA.length && columna >= 0 && columna < MAPA[fila].length; // Evita salir de la matriz.
+        return dentro && esCalle(fila, columna); // Fuera del mapa no hay calle.
+    }
+
+    /** Indica si la celda es una intersección: calle con calle al norte o sur y calle al este u oeste. */
+    public static boolean esInterseccion(int fila, int columna) {
+        if (!esCalleSegura(fila, columna)) { // Una manzana nunca es intersección.
+            return false; // Descarta la celda.
+        }
+        boolean norteSur = esCalleSegura(fila - 1, columna) || esCalleSegura(fila + 1, columna); // Hay calle vertical.
+        boolean esteOeste = esCalleSegura(fila, columna - 1) || esCalleSegura(fila, columna + 1); // Hay calle horizontal.
+        return norteSur && esteOeste; // Se cruzan dos calles.
+    }
+
+    /** Lista todas las intersecciones como {fila, columna}, de norte a sur y de oeste a este. */
+    public static List<int[]> intersecciones() {
+        List<int[]> lista = new ArrayList<>(); // Resultado.
+        for (int fila = 0; fila < MAPA.length; fila++) { // Recorre las filas.
+            for (int columna = 0; columna < MAPA[fila].length; columna++) { // Recorre las columnas.
+                if (esInterseccion(fila, columna)) { // Solo los cruces.
+                    lista.add(new int[] {fila, columna}); // Guarda la intersección.
+                }
+            }
+        }
+        return lista; // Intersecciones del mapa.
+    }
+
+    /** Devuelve el índice de sector (en SECTORES) de una celda, usando su centro. */
+    public static int sectorDeCelda(int fila, int columna) {
+        return sector(centro(columna), centro(fila)); // Las columnas son X y las filas son Z.
+    }
+
+    /** Lista los accesos {dFila, dColumna} de una intersección: las calles vecinas por las que llegan autos. */
+    public static List<int[]> accesos(int fila, int columna) {
+        List<int[]> lista = new ArrayList<>(); // Resultado.
+        for (int[] vecino : VECINOS) { // Revisa norte, sur, oeste y este.
+            if (esCalleSegura(fila + vecino[0], columna + vecino[1])) { // Hay una calle que llega por ese lado.
+                lista.add(vecino); // Es un acceso.
+            }
+        }
+        return lista; // Accesos de la intersección.
+    }
+
+    /** Lista las celdas de parque como {fila, columna}. */
+    public static List<int[]> parques() {
+        List<int[]> lista = new ArrayList<>(); // Resultado.
+        for (int fila = 0; fila < MAPA.length; fila++) { // Recorre las filas.
+            for (int columna = 0; columna < MAPA[fila].length; columna++) { // Recorre las columnas.
+                if (MAPA[fila][columna] == PARQUE) { // Solo los parques.
+                    lista.add(new int[] {fila, columna}); // Guarda el parque.
+                }
+            }
+        }
+        return lista; // Parques del mapa.
     }
 
     /** Calcula la altura del edificio de una celda; Ciudad y Decoracion usan el mismo valor. */

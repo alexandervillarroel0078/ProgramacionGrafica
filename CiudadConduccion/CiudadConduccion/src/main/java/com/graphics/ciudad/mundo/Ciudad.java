@@ -1,6 +1,8 @@
 package com.graphics.ciudad.mundo; // Agrupa lo que forma la ciudad: mapa, edificios, decoración y semáforos.
 
 import com.graphics.ciudad.motor.Cubo; // Dibuja cada elemento como una caja transformada.
+import java.util.ArrayList; // Lista de marcas viales.
+import java.util.List; // Tipo de la lista de marcas viales.
 
 /**
  * CIUDAD: transforma el Mapa en geometría.
@@ -50,15 +52,34 @@ public class Ciudad {
 
     /** Dibuja las líneas discontinuas de las calles dejando los cruces despejados. */
     private void dibujarMarcasCalle(int fila, int columna, float x, float z) {
+        for (float[] marca : marcasDeCelda(fila, columna, x, z)) { // Marcas de esta celda, ya sin las que pisan un paso.
+            cubo.caja(marca[0], 0.025f, marca[1], marca[2], 0.03f, marca[3], 1, 0.84f, 0.35f); // Dibuja la línea amarilla.
+        }
+    }
+
+    /**
+     * Calcula las marcas amarillas de una celda como rectángulos {x, z, anchoX, anchoZ}. La línea central se corta
+     * donde hay un paso peatonal (Decoracion.hayPasoSobre): la pintura amarilla no queda debajo de las franjas.
+     */
+    static List<float[]> marcasDeCelda(int fila, int columna, float x, float z) {
+        List<float[]> marcas = new ArrayList<>(); // Marcas visibles de la celda.
         if (fila % 2 == 0 && columna % 2 == 1) { // Identifica un tramo horizontal situado entre cruces.
             for (int desplazamiento = -3; desplazamiento <= 3; desplazamiento += 3) { // Coloca tres marcas en la celda.
-                cubo.caja(x + desplazamiento, 0.025f, z, 1.6f, 0.03f, 0.13f, 1, 0.84f, 0.35f); // Dibuja una línea alargada en X.
+                agregarSiNoHayPaso(marcas, x + desplazamiento, z, 1.6f, 0.13f); // Una línea alargada en X.
             }
         }
         if (columna % 2 == 0 && fila % 2 == 1) { // Identifica un tramo vertical situado entre cruces.
             for (int desplazamiento = -3; desplazamiento <= 3; desplazamiento += 3) { // Repite las marcas sobre ese tramo.
-                cubo.caja(x, 0.025f, z + desplazamiento, 0.13f, 0.03f, 1.6f, 1, 0.84f, 0.35f); // Dibuja una línea alargada en Z.
+                agregarSiNoHayPaso(marcas, x, z + desplazamiento, 0.13f, 1.6f); // Una línea alargada en Z.
             }
+        }
+        return marcas; // Marcas que se deben pintar.
+    }
+
+    /** Agrega una marca solo si no toca ningún paso peatonal. */
+    private static void agregarSiNoHayPaso(List<float[]> marcas, float x, float z, float anchoX, float anchoZ) {
+        if (!Decoracion.hayPasoSobre(x, z, anchoX / 2, anchoZ / 2)) { // Corta la línea central en el paso.
+            marcas.add(new float[] {x, z, anchoX, anchoZ}); // La marca queda libre: se pinta.
         }
     }
 }
