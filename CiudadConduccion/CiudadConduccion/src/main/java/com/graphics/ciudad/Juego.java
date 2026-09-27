@@ -180,6 +180,7 @@ public class Juego {
         trafico.actualizar(deltaTime, auto.getX(), auto.getZ()); // Mueve los vehículos; frenan si el jugador está adelante.
         actualizarTitulo(); // Muestra los controles y la velocidad actual.
         entregas.actualizar(deltaTime, auto); // Añade el objetivo del juego al movimiento del auto.
+        camara.actualizarSeguimiento(deltaTime, auto.getX(), auto.getZ(), auto.getAngulo()); // Recorta o recupera la distancia detrás del auto.
     }
 
     /** Compone el texto de la ventana sin mezclarlo con las fórmulas de conducción. */

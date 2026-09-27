@@ -47,12 +47,17 @@ public class Auto {
 
     // ==================== 1. VARIABLES DEL AUTO ====================
     public static final float RADIO_AUTO = 1.65f; // Radio que contiene al vehículo para las colisiones.
-    // Salida: esquina suroeste, mirando al norte. Se circula por la derecha, así que el auto no parte sobre la línea
-    // amarilla (el centro de la calle del borde oeste, X = -50) sino en el centro del carril derecho: mirando al norte,
-    // la derecha es +X. Es el mismo desplazamiento que usa el tráfico (Vehiculo.DESPLAZAMIENTO_CARRIL).
+    // Salida: calle del borde oeste (columna 0), en la última cuadra antes de la esquina suroeste, mirando al norte.
+    // FILA_SALIDA = penúltima fila: es impar, así que queda a mitad de cuadra, entre dos cruces, lejos de los pasos
+    // peatonales (que están pegados a los cruces). Se circula por la derecha, así que el auto no parte sobre la línea
+    // amarilla (el centro de la calle, X = -50) sino en el centro del carril derecho: mirando al norte, la derecha es +X.
+    // Es el mismo desplazamiento que usa el tráfico (Vehiculo.DESPLAZAMIENTO_CARRIL). Todo sale de Mapa: con otro tamaño
+    // de MAPA la salida se acomoda sola.
+    public static final int COLUMNA_SALIDA = 0; // Calle del borde oeste.
+    public static final int FILA_SALIDA = Mapa.MAPA.length - 2; // Penúltima fila: mitad de la última cuadra.
     public static final float CARRIL_SALIDA = Mapa.TAM_CELDA / 4; // 2.5: del centro de la calle al centro del carril derecho.
-    public static final float X_INICIAL = Mapa.centro(0) + CARRIL_SALIDA; // -47.5: carril derecho de la calle de la columna 0.
-    public static final float Z_INICIAL = 50; // Fila 10: calle del borde sur; el auto parte de la esquina suroeste.
+    public static final float X_INICIAL = Mapa.centro(COLUMNA_SALIDA) + CARRIL_SALIDA; // -47.5: carril derecho de la calle de la columna 0.
+    public static final float Z_INICIAL = Mapa.centro(FILA_SALIDA); // 40 con el mapa 11 × 11: fila 9, a mitad de cuadra.
     float x = X_INICIAL; // Posición horizontal inicial: carril derecho de la calle.
     float z = Z_INICIAL; // Posición inicial sobre el eje que recorre el fondo de la ciudad.
     float angulo = 0; // Orientación en radianes; cero apunta hacia -Z.

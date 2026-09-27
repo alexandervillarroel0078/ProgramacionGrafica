@@ -31,7 +31,7 @@ import static org.lwjgl.opengl.GL33.*; // glDepthMask.
 public class Cielo {
 
     // ==================== 1. CONSTANTES (valores ajustables) ====================
-    // Radio de la cúpula: debe quedar dentro de PLANO_LEJANO de ciudad.vert (320) o el recorte lejano la cortaría.
+    // Radio de la cúpula: debe quedar dentro del plano lejano (Camara.getPlanoLejano(), ≈ 319) o el recorte lejano la cortaría.
     public static final float RADIO_CIELO = 250;
     public static final float[] COLOR_CENIT_DIA = {0.16f, 0.38f, 0.82f}; // Día, mirando hacia arriba: azul intenso.
     public static final float[] COLOR_HORIZONTE_DIA = {0.72f, 0.86f, 0.97f}; // Día, en el horizonte: celeste claro.

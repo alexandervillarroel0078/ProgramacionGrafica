@@ -10,12 +10,17 @@ import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usad
 /** Comprueba que las farolas estén en la vereda, con la bombilla sobre el borde de la calle, sin abrir OpenGL. */
 public class FarolasTest extends TestCase {
 
-    private static final float DISTANCIA_MINIMA_SENAL = 3; // Separación mínima entre un poste y un semáforo, PARE o cartel.
+    private static final float DISTANCIA_MINIMA_SENAL = Iluminacion.SEPARACION_SENALES; // Separación mínima entre un poste y un semáforo, PARE o cartel (3).
     private static final float EPSILON = 1e-4f; // Tolerancia para comparar valores calculados en float.
 
     /** Cada farola está en una manzana adyacente a una calle por el lado indicado, y ninguna en celda transitable. */
     public void testPosteEnLaVeredaYBombillaSobreElBorde() {
-        assertEquals(13, Iluminacion.LUCES.length); // Se mantienen 13 farolas.
+        int esperadas = 0; // Suma de las cuotas por sector (13).
+        for (int cuota : Iluminacion.FAROLAS_POR_SECTOR) {
+            esperadas += cuota;
+        }
+        assertEquals(esperadas, Iluminacion.LUCES.length); // Todas las cuotas se cumplen.
+        assertTrue(Iluminacion.LUCES.length >= 9); // Mínimo pedido.
         assertTrue(Iluminacion.LUCES.length <= Iluminacion.MAX_LUCES); // No puede superar el arreglo uLuces del shader.
         for (int i = 0; i < Iluminacion.LUCES.length; i++) { // Revisa cada farola.
             int[] f = Iluminacion.LUCES[i]; // {fila, columna, lado}.
@@ -54,11 +59,38 @@ public class FarolasTest extends TestCase {
             for (float[] c : Senalizacion.CARTELES_SECTOR) { // Carteles de sector.
                 assertTrue(Math.hypot(poste[0] - c[1], poste[1] - c[2]) >= DISTANCIA_MINIMA_SENAL); // Lejos de cada cartel.
             }
-            assertFalse(Decoracion.hayPasoSobre(poste[0], poste[1], 0.3f, 0.3f)); // El poste no pisa un paso peatonal.
-            assertFalse(Decoracion.hayPasoSobre(bombilla[0], bombilla[2], 0.35f, 0.35f)); // La bombilla no cuelga sobre un paso.
+            assertFalse(Decoracion.hayPasoSobre(poste[0], poste[1], Iluminacion.HOLGURA_POSTE_PASO, Iluminacion.HOLGURA_POSTE_PASO)); // El poste no pisa un paso peatonal.
+            assertFalse(Decoracion.hayPasoSobre(bombilla[0], bombilla[2], Iluminacion.HOLGURA_BOMBILLA_PASO, Iluminacion.HOLGURA_BOMBILLA_PASO)); // La bombilla no cuelga sobre un paso.
         }
         for (boolean hay : sectores) { // Revisa los cinco sectores.
             assertTrue(hay); // Todos tienen farolas.
+        }
+    }
+
+    /**
+     * Reglas de ubicación: cada farola es válida (vereda, sector, lejos de señales y pasos), está a mitad de cuadra
+     * (centro del borde de su manzana) y cada sector tiene exactamente su cuota.
+     */
+    public void testReglasDeUbicacion() {
+        int[] porSector = new int[Mapa.SECTORES.length]; // Farolas encontradas en cada sector.
+        for (int i = 0; i < Iluminacion.LUCES.length; i++) {
+            int[] f = Iluminacion.LUCES[i];
+            float[] poste = Iluminacion.POSTES[i];
+            int sector = Mapa.sector(poste[0], poste[1]);
+            porSector[sector]++;
+            assertTrue("farola " + i, Iluminacion.farolaValida(f[0], f[1], f[2], sector)); // Cumple todos los criterios.
+            int[] haciaCalle = Mapa.VECINOS[f[2]];
+            if (haciaCalle[0] != 0) { // Borde norte o sur: la cuadra corre en X.
+                assertEquals(Mapa.centro(f[1]), poste[0], EPSILON); // A mitad de cuadra.
+            } else { // Borde oeste o este: la cuadra corre en Z.
+                assertEquals(Mapa.centro(f[0]), poste[1], EPSILON);
+            }
+            for (int j = 0; j < i; j++) { // Sin repetir el mismo borde.
+                assertFalse(java.util.Arrays.equals(f, Iluminacion.LUCES[j]));
+            }
+        }
+        for (int s = 0; s < porSector.length; s++) {
+            assertEquals(Mapa.NOMBRES_SECTORES[s], Iluminacion.FAROLAS_POR_SECTOR[s], porSector[s]); // Cuota del sector.
         }
     }
 

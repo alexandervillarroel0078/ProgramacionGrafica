@@ -3,7 +3,9 @@ package com.graphics.ciudad.iluminacion; // Agrupa el estado de las luces de la 
 import com.graphics.ciudad.motor.Figuras; // Cilindro, esfera y cono (los mismos de los árboles) para las farolas.
 import com.graphics.ciudad.motor.Malla; // Figura con la que se dibuja cada pieza de la farola.
 import com.graphics.ciudad.motor.Shader; // Recibe los uniforms de iluminación.
+import com.graphics.ciudad.mundo.Decoracion; // Pasos peatonales: las farolas no van sobre ellos.
 import com.graphics.ciudad.mundo.Mapa; // Convierte celdas de manzana en coordenadas y da la dirección de cada lado.
+import com.graphics.ciudad.mundo.Senalizacion; // Semáforos, PARE y carteles: las farolas se alejan de ellos.
 import com.graphics.ciudad.vehiculo.Auto; // Aporta la posición y el frente para los faros.
 import java.util.ArrayList; // Lista de piezas de cada farola.
 import java.util.List; // Tipo de esa lista.
@@ -11,7 +13,7 @@ import static org.lwjgl.glfw.GLFW.*; // Incluye las constantes de las teclas N y
 
 /**
  * ILUMINACION: sol, farolas y focos del vehículo.
- * Responsable de: el estado día/noche (N) y faros (F), las ubicaciones LUCES de las trece farolas, el envío de
+ * Responsable de: el estado día/noche (N) y faros (F), las ubicaciones LUCES de las farolas (13 con FAROLAS_POR_SECTOR), el envío de
  * esos datos al shader iluminacion.frag, el modelo y el dibujo de las farolas y el texto de estado para el título.
  * Se comunica con: Shader (uniforms uNoche, uFaros, uEmision, uLuces, uAuto, uFrente, uRotacion), Figuras (farolas), Auto
  * (posición y frente de los faros) y Juego (teclas, título y orden de dibujo). Decoracion usa esNoche().
@@ -73,23 +75,12 @@ public class Iluminacion {
     // FORMATO DE LUCES: cada farola es {fila, columna, lado}. (fila, columna) es una celda de MANZANA (edificio o parque)
     // y lado indica qué borde de esa manzana da a la calle donde va la farola: NORTE, SUR, OESTE o ESTE. El poste se
     // ubica en el centro de ese borde, MARGEN_POSTE hacia adentro de la acera, y la bombilla BRAZO_FAROLA hacia la calle.
-    // Se eligieron bordes a mitad de cuadra: lejos de las esquinas, donde están los semáforos, los PARE y los pasos
-    // peatonales, y repartidos por los cinco sectores (Centro 3, Barrio Norte 3, Parque Sur 3, Zona Oeste 2, Zona Este 2).
-    public static final int[][] LUCES = {
-        {3, 3, OESTE}, // Centro: manzana (3,3), frente a la avenida X = -30.
-        {3, 5, NORTE}, // Centro: manzana (3,5), frente a la avenida Z = -30.
-        {7, 5, SUR}, // Centro: manzana (7,5), frente a la avenida Z = 30.
-        {1, 1, OESTE}, // Barrio Norte: manzana (1,1), frente a la calle del borde oeste.
-        {1, 3, NORTE}, // Barrio Norte: manzana (1,3), frente a la calle del borde norte.
-        {1, 9, ESTE}, // Barrio Norte: manzana (1,9), frente a la calle del borde este.
-        {9, 1, SUR}, // Parque Sur: manzana (9,1), frente a la calle del borde sur.
-        {9, 7, SUR}, // Parque Sur: parque (9,7), frente a la calle del borde sur.
-        {9, 9, ESTE}, // Parque Sur: manzana (9,9), frente a la calle del borde este.
-        {3, 1, OESTE}, // Zona Oeste: parque (3,1), frente a la calle del borde oeste.
-        {5, 1, SUR}, // Zona Oeste: manzana (5,1), frente a la avenida Z = 10.
-        {3, 9, OESTE}, // Zona Este: parque (3,9), frente a la avenida X = 30.
-        {5, 9, ESTE} // Zona Este: manzana (5,9), frente a la calle del borde este.
-    };
+    // Las ubicaciones no se escriben a mano: las elige calcularLuces() con los criterios de la sección 1b.
+    public static final int[] FAROLAS_POR_SECTOR = {3, 3, 3, 2, 2}; // Centro, Barrio Norte, Parque Sur, Zona Oeste, Zona Este (13).
+    public static final float SEPARACION_SENALES = 3; // Distancia mínima del poste a un semáforo, PARE o cartel.
+    public static final float HOLGURA_POSTE_PASO = 0.3f; // Media base del poste (con margen): no toca un paso peatonal.
+    public static final float HOLGURA_BOMBILLA_PASO = 0.35f; // Medio ancho de la pantalla (con margen): no cuelga sobre un paso.
+    public static final int[][] LUCES = calcularLuces();
     /** Posición {x, z} de cada poste, calculada desde LUCES. */
     public static final float[][] POSTES = calcularPosiciones(MARGEN_POSTE);
     /** Posición {x, y, z} de cada bombilla (la que recibe el shader), calculada desde LUCES. */
@@ -102,14 +93,99 @@ public class Iluminacion {
     private static float[][] calcularPosiciones(float haciaAdentro) {
         float[][] posiciones = new float[LUCES.length][]; // Una posición por farola.
         for (int i = 0; i < LUCES.length; i++) { // Recorre las farolas.
-            int[] farola = LUCES[i]; // {fila, columna, lado}.
-            int[] haciaCalle = Mapa.VECINOS[farola[2]]; // {dFila, dColumna} del lado que da a la calle.
-            float distancia = Mapa.TAM_CELDA / 2 - haciaAdentro; // Del centro de la manzana al punto buscado.
-            float x = Mapa.centro(farola[1]) + haciaCalle[1] * distancia; // Las columnas son X.
-            float z = Mapa.centro(farola[0]) + haciaCalle[0] * distancia; // Las filas son Z.
-            posiciones[i] = new float[] {x, z}; // Punto en el centro del borde.
+            posiciones[i] = posicion(LUCES[i], haciaAdentro); // Punto en el centro del borde.
         }
         return posiciones; // Posiciones calculadas.
+    }
+
+    /** {x, z} en el centro del borde "lado" de la manzana, a "haciaAdentro" del cordón (negativo = sobre la calle). */
+    private static float[] posicion(int[] farola, float haciaAdentro) {
+        int[] haciaCalle = Mapa.VECINOS[farola[2]]; // {dFila, dColumna} del lado que da a la calle.
+        float distancia = Mapa.TAM_CELDA / 2 - haciaAdentro; // Del centro de la manzana al punto buscado.
+        float x = Mapa.centro(farola[1]) + haciaCalle[1] * distancia; // Las columnas son X.
+        float z = Mapa.centro(farola[0]) + haciaCalle[0] * distancia; // Las filas son Z.
+        return new float[] {x, z};
+    }
+
+    // ==================== 1b. REGLAS PARA UBICAR LAS FAROLAS ====================
+    // Todo se calcula desde Mapa y Senalizacion: con otro tamaño de MAPA las farolas se reubican con los mismos criterios.
+
+    /**
+     * FAROLA VÁLIDA: el borde "lado" de la manzana (fila, columna) sirve para una farola del sector si:
+     *  - EN LA VEREDA: la celda es una manzana (edificio o parque) y por ese lado hay una calle; el poste queda en la
+     *    acera y solo la bombilla sobresale sobre la calzada (nunca el poste en la calle);
+     *  - A MITAD DE CUADRA: el poste va en el centro del borde, lo más lejos posible de las dos esquinas (lo garantiza
+     *    posicion());
+     *  - EN SU SECTOR: el poste cae dentro del sector que se está iluminando;
+     *  - LEJOS DE LAS SEÑALES: a SEPARACION_SENALES o más de cada semáforo, PARE y cartel (no se tapan entre sí);
+     *  - FUERA DE LOS PASOS PEATONALES: ni el poste ni la bombilla quedan sobre un paso.
+     */
+    static boolean farolaValida(int fila, int columna, int lado, int sector) {
+        int[] haciaCalle = Mapa.VECINOS[lado]; // Dirección de la calle.
+        if (Mapa.esCalle(fila, columna) || !Mapa.esCalleSegura(fila + haciaCalle[0], columna + haciaCalle[1])) {
+            return false; // No es una manzana, o ese lado no da a una calle.
+        }
+        int[] farola = {fila, columna, lado};
+        float[] poste = posicion(farola, MARGEN_POSTE); // Sobre la acera.
+        float[] bombilla = posicion(farola, MARGEN_POSTE - BRAZO_FAROLA); // Punta del brazo, sobre la calzada.
+        if (Mapa.sector(poste[0], poste[1]) != sector) {
+            return false; // Pertenece a otro sector.
+        }
+        List<float[]> senales = new ArrayList<>(Senalizacion.SEMAFOROS); // {x, z, ...}.
+        senales.addAll(Senalizacion.PARES); // {x, z, ángulo}.
+        for (float[] c : Senalizacion.CARTELES_SECTOR) { // {sector, x, z, ángulo}: se pasa a {x, z}.
+            senales.add(new float[] {c[1], c[2]});
+        }
+        for (float[] s : senales) {
+            if (Math.hypot(poste[0] - s[0], poste[1] - s[1]) < SEPARACION_SENALES) {
+                return false; // Demasiado cerca de una señal.
+            }
+        }
+        return !Decoracion.hayPasoSobre(poste[0], poste[1], HOLGURA_POSTE_PASO, HOLGURA_POSTE_PASO)
+            && !Decoracion.hayPasoSobre(bombilla[0], bombilla[1], HOLGURA_BOMBILLA_PASO, HOLGURA_BOMBILLA_PASO);
+    }
+
+    /**
+     * REPARTO: para cada sector, FAROLAS_POR_SECTOR[sector] farolas elegidas entre las válidas para que queden lo MÁS
+     * SEPARADAS POSIBLE de todas las ya ubicadas (en su sector y en los anteriores): cada vez se toma la candidata cuya
+     * farola más cercana está más lejos ("punto más lejano"). La primera de todas es la más alejada del origen. Así la
+     * luz se reparte por toda la ciudad, sin farolas amontonadas. En empates gana la primera en el orden fila, columna,
+     * lado (siempre el mismo resultado).
+     */
+    private static int[][] calcularLuces() {
+        List<int[]> elegidas = new ArrayList<>(); // {fila, columna, lado}.
+        List<float[]> postes = new ArrayList<>(); // Postes de las elegidas.
+        for (int sector = 0; sector < FAROLAS_POR_SECTOR.length && sector < Mapa.SECTORES.length; sector++) {
+            List<int[]> candidatas = new ArrayList<>(); // Bordes válidos del sector.
+            for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
+                for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                    for (int lado = 0; lado < Mapa.VECINOS.length; lado++) { // NORTE, SUR, OESTE, ESTE.
+                        if (farolaValida(fila, columna, lado, sector)) {
+                            candidatas.add(new int[] {fila, columna, lado});
+                        }
+                    }
+                }
+            }
+            for (int n = 0; n < FAROLAS_POR_SECTOR[sector] && !candidatas.isEmpty(); n++) { // Una farola por vuelta.
+                int mejor = 0; // Índice de la candidata elegida.
+                double mejorDistancia = -1; // Su distancia a la farola más cercana.
+                for (int i = 0; i < candidatas.size(); i++) {
+                    float[] p = posicion(candidatas.get(i), MARGEN_POSTE);
+                    double distancia = postes.isEmpty() ? Math.hypot(p[0], p[1]) : Double.MAX_VALUE; // La primera: lejos del origen.
+                    for (float[] q : postes) {
+                        distancia = Math.min(distancia, Math.hypot(p[0] - q[0], p[1] - q[1])); // Farola más cercana.
+                    }
+                    if (distancia > mejorDistancia) { // Estrictamente mayor: en empates queda la primera.
+                        mejor = i;
+                        mejorDistancia = distancia;
+                    }
+                }
+                int[] farola = candidatas.remove(mejor);
+                elegidas.add(farola);
+                postes.add(posicion(farola, MARGEN_POSTE));
+            }
+        }
+        return elegidas.toArray(new int[0][]);
     }
 
     /** La bombilla está en la punta del brazo: BRAZO_FAROLA más allá del poste, hacia la calle, a ALTURA_BOMBILLA. */

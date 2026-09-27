@@ -11,17 +11,18 @@ public class EntornoTest extends TestCase {
 
     /** El campo se extiende más allá del borde, pero el límite de la ciudad sigue siendo el mismo. */
     public void testNoCambiaElLimite() {
-        assertEquals(110f, Mapa.TAMANO, 0f); // La ciudad sigue midiendo 11 celdas de 10.
-        assertEquals(55f, Mapa.LIMITE, 0f); // El borde sigue a 55 del origen.
+        assertEquals(Mapa.MAPA.length * Mapa.TAM_CELDA, Mapa.TAMANO, 0f); // La ciudad sigue midiendo lo que dice la matriz.
+        assertEquals(Mapa.TAMANO / 2, Mapa.LIMITE, 0f); // El borde sigue a medio lado del origen (55 con 11 × 11).
         assertEquals(Mapa.LIMITE + Entorno.ENTORNO_EXTRA, Entorno.BORDE_CAMPO, 0f); // El campo se suma afuera, no cambia el límite.
         assertTrue(Entorno.ENTORNO_EXTRA >= Mapa.LIMITE); // "Bastante más allá": al menos otra media ciudad por lado.
     }
 
     /** Las colisiones son las de siempre: las calles se pueden recorrer y el auto no sale al campo ni sube al cordón. */
     public void testNoCambiaLasColisiones() {
-        for (float z = -50; z <= 50; z += 0.5f) { // Calle perimetral oeste, pegada al cordón.
-            assertTrue(Colisiones.puedeCircular(-50, z)); // Sigue transitable.
-            assertTrue(Colisiones.puedeCircular(50, z)); // Y la del este.
+        float borde = Mapa.centro(Mapa.MAPA.length - 1); // Centro de la calle perimetral (50 con 11 × 11).
+        for (float z = -borde; z <= borde; z += 0.5f) { // Calle perimetral oeste, pegada al cordón.
+            assertTrue(Colisiones.puedeCircular(-borde, z)); // Sigue transitable.
+            assertTrue(Colisiones.puedeCircular(borde, z)); // Y la del este.
         }
         assertTrue(Colisiones.puedeCircular(Auto.X_INICIAL, Auto.Z_INICIAL)); // La salida no cambió.
         for (float[] destino : Entregas.DESTINOS) { // Las entregas siguen accesibles.

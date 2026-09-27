@@ -24,9 +24,16 @@ public class SenalizacionTest extends TestCase {
         assertEquals(que + " no mira al auto (z)", -dZ, -(float) Math.cos(angulo), EPSILON); // Igual en Z.
     }
 
-    /** Semáforos: solo en las 4 intersecciones del Centro, uno por acceso, a la derecha y mirando al auto. */
+    /** Semáforos: en todas las intersecciones del Centro (4 con el mapa 11 × 11), uno por acceso, a la derecha y mirando al auto. */
     public void testSemaforos() {
-        assertEquals(4, Senalizacion.INTERSECCIONES_SEMAFORO.size()); // Las cuatro del Centro.
+        int delCentro = 0; // Intersecciones que caen en el sector de los semáforos.
+        for (int[] cruce : Mapa.intersecciones()) {
+            if (Mapa.sectorDeCelda(cruce[0], cruce[1]) == Senalizacion.SECTOR_SEMAFOROS) {
+                delCentro++;
+            }
+        }
+        assertTrue(delCentro > 0); // El Centro tiene cruces.
+        assertEquals(delCentro, Senalizacion.INTERSECCIONES_SEMAFORO.size()); // Todas las del Centro, ni una más.
         int accesos = 0; // Accesos totales de esas intersecciones.
         for (int[] cruce : Senalizacion.INTERSECCIONES_SEMAFORO) { // Revisa cada cruce con semáforo.
             assertTrue(Mapa.esInterseccion(cruce[0], cruce[1])); // Es una intersección.
@@ -117,6 +124,90 @@ public class SenalizacionTest extends TestCase {
         }
         for (float[] p : Senalizacion.PARES) { // Ningún PARE en calle.
             assertFalse(Mapa.esCalleEn(p[0], p[1])); // Sobre la vereda.
+        }
+    }
+
+    // ==================== REGLAS DE UBICACIÓN (sirven para cualquier tamaño de MAPA) ====================
+
+    /**
+     * Regla del PARE: cruce interior, fuera del Centro, que no es un cruce de entrada; se detiene a quien viene del
+     * borde; y son los más cercanos al Centro (ningún cruce descartado está más cerca que uno elegido).
+     */
+    public void testReglaDelPare() {
+        int ultima = Mapa.MAPA.length - 1;
+        double masLejano = 0; // Distancia al origen del PARE más lejano.
+        double anterior = 0; // Están ordenados de más cerca a más lejos.
+        for (int[] u : Senalizacion.UBICACIONES_PARE) {
+            String que = "PARE (" + u[0] + "," + u[1] + ")";
+            assertTrue(que + " en el borde", u[0] > 0 && u[0] < ultima && u[1] > 0 && u[1] < ultima); // Cruce interior.
+            int sector = Mapa.sectorDeCelda(u[0], u[1]);
+            assertTrue(que + " en el Centro", sector != Senalizacion.SECTOR_SEMAFOROS); // Fuera del Centro.
+            assertFalse(que + " en un cruce de entrada", esCruceDeEntrada(u[0], u[1])); // La entrada tiene prioridad.
+            int[] afuera = Senalizacion.direccionHaciaAfuera(sector);
+            assertEquals(que, afuera[0], u[2]); // Acceso desde el borde hacia adentro.
+            assertEquals(que, afuera[1], u[3]);
+            double distancia = Math.hypot(Mapa.centro(u[1]), Mapa.centro(u[0]));
+            assertTrue(que + " fuera de orden", distancia >= anterior - EPSILON);
+            anterior = distancia;
+            masLejano = Math.max(masLejano, distancia);
+        }
+        for (int[] c : Mapa.intersecciones()) { // Los cruces que podían llevar PARE y quedaron afuera...
+            int sector = Mapa.sectorDeCelda(c[0], c[1]);
+            boolean candidato = sector != Senalizacion.SECTOR_SEMAFOROS && c[0] > 0 && c[0] < ultima && c[1] > 0
+                && c[1] < ultima && !esCruceDeEntrada(c[0], c[1]);
+            boolean elegido = false;
+            for (int[] u : Senalizacion.UBICACIONES_PARE) {
+                elegido |= u[0] == c[0] && u[1] == c[1];
+            }
+            if (candidato && !elegido) { // ...están a igual o mayor distancia que el más lejano elegido.
+                assertTrue(Senalizacion.UBICACIONES_PARE.length == Senalizacion.MAX_PARE);
+                assertTrue(Math.hypot(Mapa.centro(c[1]), Mapa.centro(c[0])) >= masLejano - EPSILON);
+            }
+        }
+    }
+
+    /** Indica si (fila, columna) es el cruce de entrada de algún sector. */
+    private static boolean esCruceDeEntrada(int fila, int columna) {
+        for (int s = 0; s < Mapa.SECTORES.length; s++) {
+            int[] c = Senalizacion.cruceDeEntrada(s);
+            if (c != null && c[0] == fila && c[1] == columna) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Regla del cartel: en la vereda DERECHA de la entrada principal, sobre la primera manzana del sector que encuentra
+     * el conductor, mirando al auto que entra. La entrada va hacia afuera (al Centro, hacia el norte) por una calle.
+     */
+    public void testReglaDelCartel() {
+        for (float[] c : Senalizacion.CARTELES_SECTOR) {
+            int sector = (int) c[0];
+            String que = "cartel " + Mapa.NOMBRES_SECTORES[sector];
+            int[] e = Senalizacion.entradaDeSector(sector); // {dFila, dColumna, calle}.
+            int[] afuera = Senalizacion.direccionHaciaAfuera(sector);
+            int[] esperado = afuera != null ? afuera : new int[] {-1, 0}; // Al Centro se entra hacia el norte.
+            assertEquals(que, esperado[0], e[0]);
+            assertEquals(que, esperado[1], e[1]);
+            assertEquals(que + ": la entrada no es una calle", 0, e[2] % 2); // Filas y columnas pares.
+            int derechaFila = e[1]; // Derecha del conductor, en celdas.
+            int derechaColumna = -e[0];
+            int fila = Mapa.indiceCelda(c[2]); // Manzana donde está el cartel.
+            int columna = Mapa.indiceCelda(c[1]);
+            assertFalse(que, Mapa.esCalle(fila, columna)); // Sobre una manzana.
+            assertEquals(que + " no está a la derecha", e[2] + (e[0] != 0 ? derechaColumna : derechaFila), e[0] != 0 ? columna : fila);
+            assertEquals(que + " no mira al auto", (float) Math.atan2(e[1], e[0]), c[3], EPSILON);
+            // Ninguna manzana del sector a la derecha de la entrada aparece ANTES en el recorrido del auto.
+            int n = Mapa.MAPA.length;
+            int indiceCartel = e[0] != 0 ? fila : columna; // Posición a lo largo de la calle.
+            int paso = e[0] != 0 ? e[0] : e[1]; // +1 hacia el sur/este, -1 hacia el norte/oeste.
+            for (int i = paso > 0 ? 0 : n - 1; i != indiceCartel; i += paso) {
+                int f = e[0] != 0 ? i : e[2] + derechaFila;
+                int col = e[0] != 0 ? e[2] + derechaColumna : i;
+                boolean manzanaDelSector = !Mapa.esCalle(f, col) && Mapa.sectorDeCelda(f, col) == sector;
+                assertFalse(que + " no es la primera manzana", manzanaDelSector);
+            }
         }
     }
 }

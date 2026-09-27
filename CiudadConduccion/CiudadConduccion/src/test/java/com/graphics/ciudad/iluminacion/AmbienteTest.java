@@ -8,14 +8,9 @@ import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usad
 /** Comprueba el cielo (cúpula, estrellas y luna) y las sombras falsas sin abrir una ventana OpenGL. */
 public class AmbienteTest extends TestCase {
 
-    /** La cúpula, las estrellas y la luna quedan dentro del plano lejano de ciudad.vert: si no, se recortarían. */
+    /** La cúpula, las estrellas y la luna quedan dentro del plano lejano (uPlanoLejano): si no, se recortarían. */
     public void testCieloDentroDelPlanoLejano() throws Exception {
-        java.io.InputStream entrada = Cielo.class.getResourceAsStream("/shaders/ciudad.vert"); // El shader, desde el classpath.
-        assertNotNull(entrada);
-        String texto = new String(entrada.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("PLANO_LEJANO\\s*=\\s*([0-9.]+)").matcher(texto);
-        assertTrue(m.find());
-        float planoLejano = Float.parseFloat(m.group(1)); // Su valor.
+        float planoLejano = new com.graphics.ciudad.motor.Camara(Mapa.LIMITE).getPlanoLejano(); // El que recibe ciudad.vert.
         assertTrue(Cielo.RADIO_CIELO < planoLejano); // La cúpula entera se ve.
         assertTrue(Cielo.DISTANCIA_ESTRELLAS < Cielo.RADIO_CIELO); // Estrellas delante de la cúpula.
         assertTrue(Cielo.DISTANCIA_LUNA + Cielo.DIAMETRO_LUNA / 2 < Cielo.DISTANCIA_ESTRELLAS); // Luna delante de las estrellas.

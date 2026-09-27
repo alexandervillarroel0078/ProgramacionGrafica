@@ -1,5 +1,6 @@
 package com.graphics.ciudad.motor; // Agrupa las piezas técnicas: ventana, shaders, geometría y cámara.
 
+import com.graphics.ciudad.mundo.Mapa; // Celdas de calle: la cámara de seguimiento no se pone sobre una manzana.
 import static org.lwjgl.glfw.GLFW.*; // Permite consultar las flechas que orbitan la cámara.
 
 /**
@@ -16,8 +17,11 @@ import static org.lwjgl.glfw.GLFW.*; // Permite consultar las flechas que orbita
  *    Al entrar al modo la cámara vuelve a la vista general de siempre (la de las capturas).
  * Mouse: arrastrar con el botón izquierdo = girar y elevar; ruedita = acercar y alejar; botón derecho = desplazar
  * (solo en la aérea). En la cámara de seguimiento el mouse no hace nada.
- * Se comunica con: Shader, al que envía uOjo, uObjetivo y uAspecto; Juego, que le pasa la posición y el
- * ángulo del Auto y el tamaño de la Ventana en cada cuadro; Ventana, que le entrega los movimientos del mouse.
+ * SEGUIMIENTO: se acerca al auto cuando el punto de detrás cae sobre una manzana o fuera de la ciudad (ver
+ * distanciaLibre()), y vuelve a su distancia de a poco.
+ * Se comunica con: Shader, al que envía uOjo, uObjetivo, uAspecto y uPlanoLejano; Juego, que le pasa la posición y
+ * el ángulo del Auto y el tamaño de la Ventana en cada cuadro; Ventana, que le entrega los movimientos del mouse;
+ * Mapa, para saber qué celdas son calle.
  */
 public class Camara {
 
@@ -56,10 +60,26 @@ public class Camara {
     public static final float PASO_ZOOM_AEREO = 6; // Unidades de distancia por paso de ruedita: la ciudad es grande.
     public static final float SENSIBILIDAD_DESPLAZAMIENTO = 0.0015f; // Desplazamiento por píxel, por unidad de distancia (lejos = más rápido).
 
-    // ==================== CÁMARA DE SEGUIMIENTO ====================
-    private static final float DISTANCIA_SEGUIMIENTO = 12; // Distancia horizontal de la cámara de seguimiento detrás del auto.
-    private static final float ALTURA_SEGUIMIENTO = 9; // Altura de la cámara de seguimiento sobre el suelo.
+    // ==================== CÁMARA DE SEGUIMIENTO (valores ajustables) ====================
+    // RECORTE: la cámara va DISTANCIA_SEGUIMIENTO detrás del auto, pero si ese punto cae sobre una manzana (al doblar,
+    // el "detrás" apunta en diagonal hacia un edificio) o fuera de ±(límite − MARGEN_BORDE_CAMARA), se acerca al auto.
+    // distanciaLibre() camina desde el auto hacia atrás en pasos de PASO_RECORTE y se queda con el último punto que
+    // sigue sobre calle: así el ojo y toda la línea que lo une con el auto quedan sobre la calle, sin atravesar edificios.
+    // SUAVIZADO: acercarse es inmediato (la cámara nunca entra a un edificio); alejarse, en cambio, se hace a
+    // VELOCIDAD_ALEJAMIENTO para que no salte al salir de la curva. En una calle recta no hay recorte y la distancia es
+    // siempre DISTANCIA_SEGUIMIENTO: se ve igual que sin recorte, sin quedar atrasada.
+    public static final float DISTANCIA_SEGUIMIENTO = 12; // Distancia horizontal de la cámara de seguimiento detrás del auto.
+    public static final float ALTURA_SEGUIMIENTO = 9; // Altura de la cámara de seguimiento sobre el suelo.
     private static final float ALTURA_OBJETIVO = 0.8f; // Altura del punto del auto al que mira la cámara (la carrocería).
+    public static final float DISTANCIA_SEGUIMIENTO_MIN = 1.5f; // Nunca más cerca: con 0 la cámara miraría justo hacia abajo.
+    public static final float MARGEN_BORDE_CAMARA = 1; // La cámara queda al menos esto adentro del borde de la ciudad.
+    public static final float PASO_RECORTE = 0.25f; // Resolución de la búsqueda del punto libre, en unidades.
+    public static final float VELOCIDAD_ALEJAMIENTO = 12; // Unidades por segundo con que la cámara recupera su distancia.
+
+    // ==================== PLANO LEJANO (valores ajustables) ====================
+    // ciudad.vert recorta lo que está más lejos que uPlanoLejano. Debe alcanzar la esquina opuesta de la ciudad con la
+    // aérea alejada al máximo y el centro en una esquina: DISTANCIA_AEREA_MAX + diagonal, más un margen.
+    public static final float MARGEN_PLANO_LEJANO = 20; // Con límite 55: 143 + 155.6 + 20 ≈ 319.
 
     // ==================== ESTADO ====================
     private Modo modo = Modo.SEGUIMIENTO; // El juego arranca con la cámara de seguimiento.
@@ -71,6 +91,7 @@ public class Camara {
     private final float distanciaAereaInicial; // D de la vista inicial.
     private float centroX = 0; // Punto de la ciudad que mira la cámara aérea, en X.
     private float centroZ = 0; // Y en Z.
+    private float distanciaSeguimiento = DISTANCIA_SEGUIMIENTO; // Distancia actual detrás del auto (suavizada).
     private final float[] ojo = new float[3]; // Última posición de la cámara enviada al shader: Cielo centra su cúpula ahí.
 
     /** Recibe la distancia del centro a cada borde (Mapa.LIMITE) y ajusta la vista aérea a ese tamaño. */
@@ -197,6 +218,58 @@ public class Camara {
         return FACTOR_DISTANCIA_AEREA_MAX * limite; // 143 con límite 55.
     }
 
+    /** Plano lejano que se envía a ciudad.vert: la aérea más lejana ve la esquina opuesta de la ciudad. */
+    public float getPlanoLejano() {
+        float diagonal = (float) Math.hypot(2 * limite, 2 * limite); // De una esquina de la ciudad a la opuesta.
+        return getDistanciaAereaMax() + diagonal + MARGEN_PLANO_LEJANO; // ≈ 319 con límite 55.
+    }
+
+    // ==================== CÁMARA DE SEGUIMIENTO: RECORTE Y SUAVIZADO ====================
+
+    /**
+     * Mayor distancia (hasta DISTANCIA_SEGUIMIENTO) a la que se puede poner la cámara detrás del auto sin salir de
+     * ±(límite − MARGEN_BORDE_CAMARA) ni pasar sobre una manzana. Detrás del auto es (sen ángulo, cos ángulo).
+     */
+    float distanciaLibre(float autoX, float autoZ, float angulo) {
+        float atrasX = (float) Math.sin(angulo); // Dirección hacia atrás, en X.
+        float atrasZ = (float) Math.cos(angulo); // Y en Z.
+        float borde = limite - MARGEN_BORDE_CAMARA; // La cámara no pasa de acá.
+        float libre = 0; // Último punto libre encontrado.
+        for (float d = PASO_RECORTE; d <= DISTANCIA_SEGUIMIENTO + 1e-4f; d += PASO_RECORTE) { // Camina desde el auto hacia atrás.
+            float x = autoX + atrasX * d; // Punto candidato.
+            float z = autoZ + atrasZ * d;
+            boolean adentro = Math.abs(x) <= borde && Math.abs(z) <= borde; // Dentro de la ciudad, con margen.
+            if (!adentro || !Mapa.esCalleEn(x, z)) { // Fuera del mapa o sobre una manzana.
+                break; // Lo que sigue queda tapado: la cámara se detiene en el último punto libre.
+            }
+            libre = d; // Este punto sirve.
+        }
+        return Math.max(DISTANCIA_SEGUIMIENTO_MIN, Math.min(libre, DISTANCIA_SEGUIMIENTO)); // Nunca pegada al auto ni más lejos que la normal.
+    }
+
+    /** Actualiza la distancia suavizada: se acerca de golpe si hace falta y se aleja a VELOCIDAD_ALEJAMIENTO. */
+    public void actualizarSeguimiento(float deltaTime, float autoX, float autoZ, float angulo) {
+        float libre = distanciaLibre(autoX, autoZ, angulo); // Hasta dónde se puede alejar ahora.
+        if (libre <= distanciaSeguimiento) { // Hay algo más cerca que la cámara actual.
+            distanciaSeguimiento = libre; // Se acerca de inmediato: nunca queda dentro de un edificio.
+        } else { // Hay más espacio: vuelve de a poco.
+            distanciaSeguimiento = Math.min(libre, distanciaSeguimiento + VELOCIDAD_ALEJAMIENTO * deltaTime);
+        }
+    }
+
+    /** Distancia actual de la cámara de seguimiento detrás del auto. */
+    public float getDistanciaSeguimiento() {
+        return distanciaSeguimiento;
+    }
+
+    /** Posición {x, y, z} de la cámara de seguimiento: la misma que configurar() envía al shader. */
+    float[] ojoSeguimiento(float autoX, float autoZ, float angulo) {
+        float d = Math.min(distanciaSeguimiento, distanciaLibre(autoX, autoZ, angulo)); // Por si el auto se movió sin actualizar (R).
+        float x = autoX + (float) Math.sin(angulo) * d; // Detrás del auto en X.
+        float z = autoZ + (float) Math.cos(angulo) * d; // Detrás del auto en Z.
+        return new float[] {x, ALTURA_SEGUIMIENTO, z};
+    }
+
     /** Centro de la cámara aérea en X. */
     public float getCentroX() {
         return centroX; // Entre -límite y límite.
@@ -236,9 +309,7 @@ public class Camara {
             enviar(shader, orbitaAuto.ojo(autoX, ALTURA_OBJETIVO, autoZ, angulo), autoX, ALTURA_OBJETIVO, autoZ, ancho, alto);
             return; // No sigue con la cámara de seguimiento.
         }
-        float camaraX = autoX + (float) Math.sin(angulo) * DISTANCIA_SEGUIMIENTO; // Coloca la cámara 12 unidades detrás en X.
-        float camaraZ = autoZ + (float) Math.cos(angulo) * DISTANCIA_SEGUIMIENTO; // Coloca la cámara 12 unidades detrás en Z.
-        enviar(shader, new float[] {camaraX, ALTURA_SEGUIMIENTO, camaraZ}, autoX, ALTURA_OBJETIVO, autoZ, ancho, alto); // A 9 de altura, mirando la carrocería.
+        enviar(shader, ojoSeguimiento(autoX, autoZ, angulo), autoX, ALTURA_OBJETIVO, autoZ, ancho, alto); // Hasta 12 detrás y a 9 de altura, mirando la carrocería.
     }
 
     /** Posición de la cámara calculada en el último configurar() (copia); Cielo centra la cúpula en ella. */
@@ -252,5 +323,6 @@ public class Camara {
         shader.vector("uOjo", ojo[0], ojo[1], ojo[2]); // Posición de la cámara.
         shader.vector("uObjetivo", objetivoX, objetivoY, objetivoZ); // Punto al que mira.
         shader.decimal("uAspecto", (float) ancho / alto); // Mantiene las proporciones al redimensionar la ventana.
+        shader.decimal("uPlanoLejano", getPlanoLejano()); // Distancia máxima visible, según el tamaño de la ciudad.
     }
 }

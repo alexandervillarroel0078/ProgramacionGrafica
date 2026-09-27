@@ -6,6 +6,7 @@ import com.graphics.ciudad.motor.Shader; // Lo necesita Semaforo para la emisió
 import com.graphics.ciudad.motor.Texto; // Convierte el nombre de cada sector en rectángulos para el cartel.
 import java.util.ArrayList; // Listas calculadas de semáforos y señales.
 import java.util.Collections; // Publica las listas sin permitir modificarlas desde afuera.
+import java.util.Comparator; // Ordena los cruces candidatos a PARE por distancia al Centro.
 import java.util.List; // Tipo de esas listas.
 
 /**
@@ -46,40 +47,26 @@ public class Senalizacion {
     public static final float ALTURA_CARTEL = 2.4f; // Altura del centro de la placa sobre la vereda.
     public static final float[] COLOR_CARTEL = {0.05f, 0.42f, 0.20f}; // Verde vial.
     private static final float ALTURA_ACERA = 0.3f; // Las señales se apoyan sobre la acera, que Ciudad dibuja con 0.3 de alto.
+    public static final int MAX_PARE = 10; // Tope de señales de PARE en toda la ciudad (el enunciado pide entre 6 y 10).
+    public static final float RETROCESO_CARTEL = 0.75f; // Del borde de la manzana (la esquina) al cartel, a lo largo de la calle.
+    public static final float SEPARACION_CARTEL = 1.5f; // Del cordón al centro del cartel, hacia adentro de la vereda.
 
     // ==================== 2. LISTAS DE UBICACIONES ====================
     /** Intersecciones con semáforo {fila, columna}: todas las del sector Centro (4 con este mapa). */
     public static final List<int[]> INTERSECCIONES_SEMAFORO = Collections.unmodifiableList(calcularInterseccionesSemaforo());
 
     /**
-     * PARE: {fila, columna, dFila, dColumna} = intersección y acceso por el que llegan los autos que deben detenerse.
-     * Se eligieron cruces sin semáforo de los cuatro sectores exteriores, deteniendo a quien viene del borde de la ciudad
-     * hacia adentro (la calle secundaria); las demás calles de ese cruce tienen prioridad.
+     * Carteles de sector {índiceSector, x, z, ángulo}: en la vereda derecha de la ENTRADA PRINCIPAL del sector (ver
+     * entradaDeSector()), en la primera manzana del sector, mirando a los autos que entran (ángulo con la convención de
+     * Auto). Se calculan con cartelDeSector().
      */
-    public static final int[][] UBICACIONES_PARE = {
-        {2, 2, -1, 0}, // Barrio Norte: cruce (2,2), autos que bajan desde el norte.
-        {2, 4, -1, 0}, // Barrio Norte: cruce (2,4), autos que bajan desde el norte.
-        {2, 8, -1, 0}, // Barrio Norte: cruce (2,8), autos que bajan desde el norte.
-        {8, 2, 1, 0}, // Parque Sur: cruce (8,2), autos que suben desde el sur.
-        {8, 6, 1, 0}, // Parque Sur: cruce (8,6), autos que suben desde el sur.
-        {8, 8, 1, 0}, // Parque Sur: cruce (8,8), autos que suben desde el sur.
-        {4, 2, 0, -1}, // Zona Oeste: cruce (4,2), autos que llegan desde el oeste.
-        {6, 2, 0, -1}, // Zona Oeste: cruce (6,2), autos que llegan desde el oeste.
-        {4, 8, 0, 1}, // Zona Este: cruce (4,8), autos que llegan desde el este.
-        {6, 8, 0, 1} // Zona Este: cruce (6,8), autos que llegan desde el este.
-    };
+    public static final float[][] CARTELES_SECTOR = calcularCarteles();
 
     /**
-     * Carteles de sector {índiceSector, x, z, ángulo}: en la vereda derecha de la calle por la que se entra al sector,
-     * sobre la franja de vereda paralela a la placa, mirando a los autos que entran (ángulo con la convención de Auto).
+     * PARE: {fila, columna, dFila, dColumna} = intersección y acceso por el que llegan los autos que deben detenerse.
+     * Se calculan con calcularUbicacionesPare(): los cruces sin semáforo más cercanos al Centro.
      */
-    public static final float[][] CARTELES_SECTOR = {
-        {0, 16.5f, 24.25f, (float) Math.PI}, // Centro: se entra desde el sur por la avenida X = 10; mira al sur.
-        {1, 16.5f, -35.75f, (float) Math.PI}, // Barrio Norte: se entra hacia el norte por X = 10; mira al sur.
-        {2, -16.5f, 35.75f, 0}, // Parque Sur: se entra hacia el sur por X = -10; mira al norte.
-        {3, -35.75f, 3.5f, (float) (-Math.PI / 2)}, // Zona Oeste: se entra hacia el oeste por Z = 10; mira al este.
-        {4, 35.75f, -3.5f, (float) (Math.PI / 2)} // Zona Este: se entra hacia el este por Z = -10; mira al oeste.
-    };
+    public static final int[][] UBICACIONES_PARE = calcularUbicacionesPare();
 
     /** Semáforos calculados {x, z, ángulo, grupoNorteSur (1/0), fila, columna}: un cabezal por acceso. */
     public static final List<float[]> SEMAFOROS = Collections.unmodifiableList(calcularSemaforos());
@@ -121,6 +108,162 @@ public class Senalizacion {
             }
         }
         return lista; // Intersecciones con semáforo.
+    }
+
+    // ==================== 3b. REGLAS: ENTRADAS, CARTELES Y PARE ====================
+    // Todo se calcula desde Mapa: con otro tamaño de MAPA las señales se reubican solas con los mismos criterios.
+
+    /**
+     * DIRECCIÓN HACIA AFUERA de un sector {dFila, dColumna}: hacia dónde queda el borde de la ciudad visto desde el
+     * Centro. Sale del centro del rectángulo del sector: Barrio Norte → norte, Parque Sur → sur, Zona Oeste → oeste,
+     * Zona Este → este. El Centro no tiene "afuera": devuelve null.
+     */
+    static int[] direccionHaciaAfuera(int sector) {
+        float[] r = Mapa.SECTORES[sector]; // {xMin, xMax, zMin, zMax}.
+        float centroX = (r[0] + r[1]) / 2; // Centro del rectángulo.
+        float centroZ = (r[2] + r[3]) / 2;
+        if (Math.abs(centroX) < 1e-3f && Math.abs(centroZ) < 1e-3f) { // Rectángulo centrado en el origen: el Centro.
+            return null;
+        }
+        if (Math.abs(centroZ) >= Math.abs(centroX)) { // Franja norte o sur: afuera cambia de fila.
+            return new int[] {(int) Math.signum(centroZ), 0};
+        }
+        return new int[] {0, (int) Math.signum(centroX)}; // Franja oeste o este: afuera cambia de columna.
+    }
+
+    /**
+     * ENTRADA PRINCIPAL de un sector {dFila, dColumna, calle}: el sentido en que viaja el auto y la calle por la que
+     * entra (una columna si viaja de norte a sur o al revés, una fila si viaja de oeste a este o al revés).
+     *  - SENTIDO: hacia afuera (al Barrio Norte se entra yendo al norte). Al Centro se entra desde el sur, yendo al
+     *    norte, como el auto que sale de la esquina suroeste.
+     *  - CALLE: el eje central si es una calle; si no, la avenida contigua al eje del lado DERECHO del conductor (se
+     *    circula por la derecha, y el cartel va a la derecha). Con el mapa 11 × 11 el eje es la fila/columna 5, de
+     *    manzanas, así que se usan las avenidas 4 y 6. Si esa calle no tiene una manzana del sector a la derecha para
+     *    el cartel, se prueba la siguiente avenida hacia afuera.
+     */
+    static int[] entradaDeSector(int sector) {
+        int[] d = direccionHaciaAfuera(sector); // Sentido de viaje.
+        if (d == null) { // Centro.
+            d = new int[] {-1, 0}; // Desde el sur, hacia el norte.
+        }
+        int lado = d[0] != 0 ? -d[0] : d[1]; // Derecha del conductor: columna -dFila, o fila dColumna.
+        int eje = Mapa.MAPA.length / 2; // Fila/columna central.
+        int n = Mapa.MAPA.length;
+        for (int calle = eje % 2 == 0 ? eje : eje + lado; calle >= 0 && calle < n; calle += 2 * lado) { // Calles pares.
+            int[] entrada = {d[0], d[1], calle};
+            if (celdaDelCartel(entrada, sector) != null) { // Tiene dónde poner el cartel.
+                return entrada;
+            }
+        }
+        throw new IllegalStateException("El sector " + Mapa.NOMBRES_SECTORES[sector] + " no tiene una entrada con vereda para su cartel");
+    }
+
+    /** Celdas {fila, columna} de la calle de entrada, en el orden en que las recorre el auto (desde el borde opuesto). */
+    private static List<int[]> recorridoDeEntrada(int[] entrada) {
+        List<int[]> celdas = new ArrayList<>(); // Resultado.
+        int n = Mapa.MAPA.length;
+        boolean avanzaHaciaIndicesMayores = entrada[0] + entrada[1] > 0; // Hacia el sur o el este.
+        for (int paso = 0; paso < n; paso++) { // Toda la calle, de punta a punta.
+            int i = avanzaHaciaIndicesMayores ? paso : n - 1 - paso; // Índice a lo largo de la calle.
+            celdas.add(entrada[0] != 0 ? new int[] {i, entrada[2]} : new int[] {entrada[2], i}); // Columna fija o fila fija.
+        }
+        return celdas;
+    }
+
+    /**
+     * Celda de CALLE junto a la cual va el cartel: la primera del recorrido que tiene a su DERECHA una manzana (edificio
+     * o parque) del sector. Es la primera manzana del sector que ve el conductor al entrar. null si no hay.
+     */
+    private static int[] celdaDelCartel(int[] entrada, int sector) {
+        int derechaFila = entrada[1]; // Derecha de (dFila, dColumna) en celdas: (dColumna, -dFila).
+        int derechaColumna = -entrada[0];
+        for (int[] c : recorridoDeEntrada(entrada)) { // En el orden en que avanza el auto.
+            int fila = c[0] + derechaFila; // Manzana a la derecha.
+            int columna = c[1] + derechaColumna;
+            boolean dentro = fila >= 0 && fila < Mapa.MAPA.length && columna >= 0 && columna < Mapa.MAPA.length;
+            if (dentro && !Mapa.esCalle(fila, columna) && Mapa.sectorDeCelda(fila, columna) == sector) {
+                return c; // Primera manzana del sector a la derecha.
+            }
+        }
+        return null;
+    }
+
+    /**
+     * CARTEL DE SECTOR {sector, x, z, ángulo}: en la vereda derecha de la entrada principal, sobre la primera manzana del
+     * sector, RETROCESO_CARTEL después de la esquina (apenas se entra) y SEPARACION_CARTEL adentro del cordón. La placa
+     * queda de frente a los autos que entran.
+     */
+    static float[] cartelDeSector(int sector) {
+        int[] entrada = entradaDeSector(sector); // Sentido y calle.
+        int[] c = celdaDelCartel(entrada, sector); // Tramo de calle junto a la manzana.
+        float mitad = Mapa.TAM_CELDA / 2; // Media celda.
+        int derechaFila = entrada[1]; // Derecha del conductor, en celdas.
+        int derechaColumna = -entrada[0];
+        // Hacia el costado: del eje de la calle a la vereda derecha. Hacia adelante: del centro del tramo a la esquina
+        // por la que se entra (-mitad en el sentido de viaje) y RETROCESO_CARTEL hacia adentro de la manzana.
+        float x = Mapa.centro(c[1]) + derechaColumna * (mitad + SEPARACION_CARTEL) - entrada[1] * (mitad - RETROCESO_CARTEL);
+        float z = Mapa.centro(c[0]) + derechaFila * (mitad + SEPARACION_CARTEL) - entrada[0] * (mitad - RETROCESO_CARTEL);
+        float angulo = (float) Math.atan2(entrada[1], entrada[0]); // Frente hacia -d: mira al auto (convención de Auto).
+        return new float[] {sector, x, z, angulo};
+    }
+
+    /** Un cartel por sector, en el orden de Mapa.SECTORES. */
+    private static float[][] calcularCarteles() {
+        float[][] carteles = new float[Mapa.SECTORES.length][];
+        for (int sector = 0; sector < carteles.length; sector++) {
+            carteles[sector] = cartelDeSector(sector);
+        }
+        return carteles;
+    }
+
+    /** CRUCE DE ENTRADA de un sector: el primer cruce de su entrada principal que ya está dentro del sector. */
+    static int[] cruceDeEntrada(int sector) {
+        for (int[] c : recorridoDeEntrada(entradaDeSector(sector))) { // En el orden en que avanza el auto.
+            if (Mapa.esInterseccion(c[0], c[1]) && Mapa.sectorDeCelda(c[0], c[1]) == sector) {
+                return c;
+            }
+        }
+        return null; // El sector no tiene cruces sobre su entrada.
+    }
+
+    /** Indica si (fila, columna) es el cruce de entrada de algún sector. */
+    private static boolean esCruceDeEntrada(int fila, int columna) {
+        for (int sector = 0; sector < Mapa.SECTORES.length; sector++) {
+            int[] c = cruceDeEntrada(sector);
+            if (c != null && c[0] == fila && c[1] == columna) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * PARE: el cruce sin semáforo más cercano al Centro, y así sucesivamente hasta MAX_PARE. Criterios:
+     *  - FUERA DEL CENTRO: allí hay semáforos, y dos señales que ordenan cosas distintas en un cruce confunden;
+     *  - CRUCE INTERIOR: los del borde son esquinas y "T" de la calle perimetral, que rodea la ciudad y conserva la
+     *    prioridad;
+     *  - NO EN EL CRUCE DE ENTRADA de su sector: la entrada principal (la del cartel) es la avenida con prioridad;
+     *  - se detiene a quien viene DESDE EL BORDE hacia adentro (la calle secundaria): el acceso es
+     *    direccionHaciaAfuera() del sector; las demás calles del cruce tienen prioridad;
+     *  - CERCANÍA AL CENTRO: ordenados por distancia al origen (en empates, de norte a sur y de oeste a este), se toman
+     *    los primeros MAX_PARE: es donde hay más tránsito cruzado.
+     */
+    private static int[][] calcularUbicacionesPare() {
+        List<int[]> candidatos = new ArrayList<>(); // {fila, columna, dFila, dColumna}.
+        int ultima = Mapa.MAPA.length - 1; // Índice de la calle del borde este/sur.
+        for (int[] c : Mapa.intersecciones()) { // De norte a sur y de oeste a este.
+            int sector = Mapa.sectorDeCelda(c[0], c[1]);
+            int[] afuera = direccionHaciaAfuera(sector); // null en el Centro.
+            boolean interior = c[0] > 0 && c[0] < ultima && c[1] > 0 && c[1] < ultima;
+            if (sector == SECTOR_SEMAFOROS || afuera == null || !interior || esCruceDeEntrada(c[0], c[1])) {
+                continue; // No lleva PARE.
+            }
+            if (Mapa.esCalleSegura(c[0] + afuera[0], c[1] + afuera[1])) { // Existe la calle que llega desde el borde.
+                candidatos.add(new int[] {c[0], c[1], afuera[0], afuera[1]});
+            }
+        }
+        candidatos.sort(Comparator.comparingDouble(u -> Math.hypot(Mapa.centro(u[1]), Mapa.centro(u[0])))); // Estable.
+        return candidatos.subList(0, Math.min(MAX_PARE, candidatos.size())).toArray(new int[0][]);
     }
 
     /** Un cabezal por cada acceso de cada intersección con semáforo. */

@@ -2,6 +2,7 @@ package com.graphics.ciudad.juego; // Agrupa las reglas de la partida y el minim
 
 import com.graphics.ciudad.motor.Cubo; // Dibuja la marca y la baliza del destino.
 import com.graphics.ciudad.motor.Shader; // Activa la emisión del objetivo.
+import com.graphics.ciudad.mundo.Mapa; // Convierte las celdas de las paradas en coordenadas.
 import com.graphics.ciudad.vehiculo.Auto; // Aporta posición y velocidad para comprobar la llegada.
 
 /**
@@ -19,23 +20,36 @@ public class Entregas {
     private final Cubo cubo; // Geometría con la que se dibuja el destino.
     private int entregas = 0; // Cuenta las entregas completadas; también identifica el siguiente destino.
     private float tiempo = 0; // Acumula los segundos de la partida hasta completar el recorrido.
-    // Paradas repartidas por la ciudad 11 × 11, todas en centros de celdas de calle (filas y columnas pares):
-    // el auto parte en la esquina suroeste (-50, 50), cruza hasta el noreste, vuelve al oeste y termina en el sur.
+    // Paradas como celdas {fila, columna} de calle (fila y columna pares), igual que las rutas de Trafico, convertidas a
+    // coordenadas con Mapa.centro(). ULTIMA es la última fila/columna: así las paradas siguen en los bordes y en las
+    // esquinas aunque cambie el tamaño de MAPA. El auto parte cerca de la esquina suroeste, cruza hasta el noreste,
+    // vuelve al oeste y termina en el sur.
     public static final float RADIO_LLEGADA = 3; // Distancia máxima a la marca para que cuente la entrega, en unidades.
     public static final float VELOCIDAD_LLEGADA = 1; // El auto debe ir más lento que esto (unidades/s) para completar la entrega.
     private static final float ALTURA_BALIZA = 3.5f; // Altura media del cubo dorado que flota sobre el destino.
     private static final float AMPLITUD_BALIZA = 0.3f; // Cuánto sube y baja la baliza respecto a su altura media.
     private static final float FRECUENCIA_BALIZA = 2; // Rapidez de la oscilación: multiplica el tiempo dentro del seno.
-    public static final float[][] DESTINOS = { // Cada fila contiene X y Z de una parada sobre la calle.
-        {50, -50}, // Primera entrega: esquina noreste.
-        {-50, -10}, // Segunda entrega: calle del borde oeste, a la altura de la tercera avenida.
-        {30, 50} // Tercera entrega: calle del borde sur, sector este.
+    private static final int ULTIMA = Mapa.MAPA.length - 1; // Índice de la última fila y columna (10 con el mapa 11 × 11).
+    public static final int[][] CELDAS_DESTINOS = { // Cada fila contiene {fila, columna} de una parada sobre la calle.
+        {0, ULTIMA}, // Primera entrega: esquina noreste, (50, -50) con el mapa 11 × 11.
+        {4, 0}, // Segunda entrega: calle del borde oeste, a la altura de la tercera avenida: (-50, -10).
+        {ULTIMA, ULTIMA - 2} // Tercera entrega: calle del borde sur, sector este: (30, 50).
     };
+    public static final float[][] DESTINOS = aCoordenadas(CELDAS_DESTINOS); // Cada fila contiene X y Z de una parada.
     public static final String[] NOMBRES_DESTINOS = { // Nombre de cada parada, en el mismo orden que DESTINOS.
         "esquina noreste", // Nombre que muestra el título para la primera entrega.
         "borde oeste", // Nombre de la segunda entrega.
         "borde sur (este)" // Nombre de la tercera entrega.
     };
+
+    /** Convierte celdas {fila, columna} en posiciones {x, z} con Mapa.centro(): columna → X, fila → Z. */
+    static float[][] aCoordenadas(int[][] celdas) {
+        float[][] posiciones = new float[celdas.length][]; // Una posición por celda.
+        for (int i = 0; i < celdas.length; i++) { // Recorre las paradas.
+            posiciones[i] = new float[] {Mapa.centro(celdas[i][1]), Mapa.centro(celdas[i][0])}; // Centro de la celda.
+        }
+        return posiciones; // Paradas en coordenadas del mundo.
+    }
 
     /** Recibe el shader y el cubo compartidos. */
     public Entregas(Shader shader, Cubo cubo) {

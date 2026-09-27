@@ -13,6 +13,7 @@ uniform float uGiro; // Recibe el giro del objeto alrededor de Y.
 uniform mat3 uRotacion; // Rotación extra, antes del giro en Y (identidad para casi todo; las ruedas giran sobre su eje con ella).
 uniform float uAspecto; // Recibe la relación ancho/alto de la imagen.
 uniform int uMapa; // Selecciona perspectiva (0) o vista superior ortográfica (1).
+uniform float uPlanoLejano; // Distancia máxima visible: la calcula Camara.getPlanoLejano() a partir de Mapa.LIMITE.
 uniform float uMitadMapa; // Media anchura visible del minimapa: Mapa.LIMITE más un margen (antes fijo en 37).
 out vec3 vMundo; // Envía la posición mundial al shader de fragmentos.
 out vec3 vNormal; // Envía la normal transformada para la iluminación de iluminacion.frag.
@@ -21,7 +22,6 @@ out vec3 vLocal; // Posición del vértice dentro de la figura unitaria (-0.5 a 
 // ==================== CONSTANTES DE PROYECCIÓN (valores ajustables) ====================
 const float CAMPO_VISUAL = 55.0; // Campo visual vertical de la cámara, en grados: más grande = más gran angular.
 const float PLANO_CERCANO = 0.1; // Distancia mínima visible; lo que esté más cerca de la cámara se recorta.
-const float PLANO_LEJANO = 320.0; // Distancia máxima visible; debe cubrir la ciudad entera desde la vista aérea, aun alejada al máximo (143) con el centro en una esquina: 143 + diagonal de la ciudad (156) ≈ 299.
 const float ESCALA_ALTURA_MAPA = 100.0; // En el minimapa, divide la altura para ordenar la profundidad (lo alto tapa lo bajo).
 
 void main() { // OpenGL ejecuta este bloque una vez por vértice.
@@ -53,7 +53,7 @@ void main() { // OpenGL ejecuta este bloque una vez por vértice.
         float vistaZ = -dot(diferencia, frente); // Usa Z negativa delante de la cámara, como espera OpenGL.
         float factor = 1.0 / tan(radians(CAMPO_VISUAL) * 0.5); // Convierte el campo visual de 55 grados en escala de perspectiva.
         float cerca = PLANO_CERCANO; // Define la distancia mínima visible.
-        float lejos = PLANO_LEJANO; // Define la distancia máxima visible.
+        float lejos = uPlanoLejano; // Define la distancia máxima visible (≈ 319 con la ciudad 11 × 11).
         float clipX = vistaX * factor / uAspecto; // Corrige la coordenada horizontal según el ancho de la pantalla.
         float clipY = vistaY * factor; // Aplica el campo visual a la coordenada vertical.
         float clipZ = (lejos + cerca) / (cerca - lejos) * vistaZ; // Calcula el término de profundidad dependiente de Z.

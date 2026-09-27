@@ -2,6 +2,7 @@ package com.graphics.ciudad.juego; // Prueba las reglas de la partida desde su m
 
 import com.graphics.ciudad.motor.Cubo; // Se crea sin tocar la GPU: solo guarda referencias.
 import com.graphics.ciudad.motor.Shader; // Se crea sin tocar la GPU: OpenGL se usa recién en crear().
+import com.graphics.ciudad.mundo.Mapa; // Centros de celda y tamaño del mapa.
 import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usadas por Maven.
 
 /** Comprueba el progreso de las entregas y su reinicio sin abrir una ventana OpenGL. */
@@ -38,5 +39,19 @@ public class EntregasTest extends TestCase {
         assertSame(Entregas.DESTINOS[0], entregas.destinoActual()); // El destino activo vuelve a ser el primero.
         assertEquals(0f, entregas.getTiempo(), 0f); // El cronómetro de la partida vuelve a cero.
         assertTrue(entregas.estado().startsWith("Entregas: 0/" + Entregas.DESTINOS.length + " | Destino: ")); // El título vuelve al formato de partida en curso.
+    }
+
+    /** Cada parada es una celda de calle {fila, columna} convertida con Mapa.centro(), como las rutas de Trafico. */
+    public void testDestinosDesdeCeldas() {
+        assertEquals(Entregas.CELDAS_DESTINOS.length, Entregas.DESTINOS.length); // Una posición por celda.
+        for (int i = 0; i < Entregas.CELDAS_DESTINOS.length; i++) {
+            int[] celda = Entregas.CELDAS_DESTINOS[i];
+            assertTrue(Mapa.esCalleSegura(celda[0], celda[1])); // Dentro de la matriz y sobre la calle.
+            assertEquals(Mapa.centro(celda[1]), Entregas.DESTINOS[i][0], 0f); // Columna → X.
+            assertEquals(Mapa.centro(celda[0]), Entregas.DESTINOS[i][1], 0f); // Fila → Z.
+        }
+        float esquina = Mapa.LIMITE - Mapa.TAM_CELDA / 2; // Centro de la calle del borde.
+        assertEquals(esquina, Entregas.DESTINOS[0][0], 1e-4f); // La primera sigue en la esquina noreste...
+        assertEquals(-esquina, Entregas.DESTINOS[0][1], 1e-4f); // ...con cualquier tamaño de MAPA.
     }
 }

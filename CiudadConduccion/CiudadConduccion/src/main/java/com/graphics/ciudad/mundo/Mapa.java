@@ -42,10 +42,14 @@ public final class Mapa {
     public static final float ANCHO_EDIFICIO = 7; // Ancho y profundidad de la base de cada edificio dentro de su manzana de 10.
 
     // ==================== SECTORES CON NOMBRE (valores ajustables) ====================
-    // La ciudad se divide en cinco sectores rectangulares. El Centro es el cuadrado central de 5 × 5 celdas; alrededor,
-    // el norte y el sur ocupan todo el ancho y el oeste y el este completan las franjas laterales. Los bordes (±25)
-    // coinciden con el límite entre una calle y una manzana, así cada manzana pertenece a un solo sector.
-    public static final float RADIO_CENTRO = 25; // Distancia del origen al borde del sector Centro.
+    // La ciudad se divide en cinco sectores rectangulares. El Centro es un cuadrado central (5 × 5 celdas en el mapa
+    // 11 × 11); alrededor, el norte y el sur ocupan todo el ancho y el oeste y el este completan las franjas laterales.
+    // RADIO_CENTRO es PROPORCIONAL al tamaño de la ciudad (FRACCION_CENTRO · LIMITE), ajustado al borde válido más
+    // cercano (ver radioDelCentro()): el borde separa una MANZANA (adentro) de una CALLE (afuera). Así cada manzana
+    // pertenece a un solo sector, y las manzanas del borde del Centro dan a calles de afuera, sin semáforos, donde
+    // entran farolas a mitad de cuadra.
+    public static final float FRACCION_CENTRO = 5f / 11; // RADIO_CENTRO / LIMITE: 25 / 55 en la ciudad 11 × 11.
+    public static final float RADIO_CENTRO = radioDelCentro(FRACCION_CENTRO * LIMITE); // 25 con 11 × 11; 35 con 13 × 13.
     public static final String[] NOMBRES_SECTORES = { // Nombre de cada sector, en el mismo orden que SECTORES.
         "Centro", // Cuadrado central, con el parque del origen.
         "Barrio Norte", // Franja norte (Z negativa), de borde a borde.
@@ -63,6 +67,27 @@ public final class Mapa {
 
     /** Impide crear objetos: Mapa solo ofrece datos y cálculos estáticos. */
     private Mapa() {
+    }
+
+    /**
+     * Radio del Centro más cercano a "deseado" entre los VÁLIDOS. Con un mapa de lado impar los bordes de celda están a
+     * (h + 0.5) · TAM_CELDA del origen, donde h es cuántas celdas hay entre la celda central y la última del Centro.
+     * Es válido si esa última celda es de manzana (índice impar): el borde queda entre una manzana y una calle. También
+     * h ≥ 1, para que el Centro tenga cruces (y semáforos). Ejemplos: 11 × 11 → 25 (h = 2); 13 × 13 → 15 o 35 (h = 1 o 3).
+     */
+    static float radioDelCentro(float deseado) {
+        int central = MAPA.length / 2; // Índice de la celda central.
+        float mejor = -1; // Radio elegido.
+        for (int h = 1; h <= central; h++) { // Cada borde posible, de adentro hacia afuera.
+            if ((central - h) % 2 == 0) { // La última celda del Centro sería una calle: no sirve.
+                continue;
+            }
+            float radio = (h + 0.5f) * TAM_CELDA; // Distancia del origen a ese borde.
+            if (mejor < 0 || Math.abs(radio - deseado) < Math.abs(mejor - deseado)) { // Más cercano (en empate, el menor).
+                mejor = radio;
+            }
+        }
+        return mejor;
     }
 
     /** Convierte el índice de una fila o columna al centro de su celda. */
