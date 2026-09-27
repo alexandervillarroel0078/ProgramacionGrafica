@@ -5,12 +5,14 @@ import com.graphics.ciudad.motor.Cubo; // Senderos y bancos.
 import com.graphics.ciudad.motor.Figuras; // Esfera, cilindro y cono para árboles y fuente.
 import com.graphics.ciudad.motor.Shader; // Emisión del agua de noche.
 import java.util.ArrayList; // Listas de árboles y bancos.
+import java.util.Collections; // Publica LUMINARIAS sin permitir modificarla.
 import java.util.List; // Tipo de esas listas.
 
 /**
  * PARQUE: contenido de una celda de parque.
  * Responsable de: calcular (una vez, sin azar por cuadro) dónde van los árboles y los bancos de cada parque, y dibujar
- * senderos en cruz, una fuente central, 4 a 6 árboles (frondosos y pinos) y 2 a 4 bancos que miran a la fuente.
+ * senderos en cruz, una fuente central, 4 a 6 árboles (frondosos y pinos), 2 a 4 bancos que miran a la fuente y 1 o 2
+ * luminarias peatonales tipo GLOBO en el borde de los senderos (luces puntuales: ver luminarias()).
  * VARIACIÓN DETERMINÍSTICA: cada parque usa su fila y columna para "sortear" disposición, tipo de árbol, altura, tamaño
  * de copa y tono de verde con variacion(), una función que siempre da el mismo número para los mismos datos. Así los
  * parques son distintos entre sí, pero cada uno se ve igual en todos los cuadros y en cada ejecución.
@@ -68,6 +70,30 @@ public class Parque {
     // Formato de un árbol: {x, z, tipo, alturaTronco, diametroCopa, verde, giro, altoCopa}. altoCopa es cuánto sube la
     // copa por encima del tronco: la altura total es alturaTronco + altoCopa.
     public static final int ALTO_COPA = 7; // Índice de altoCopa en el arreglo.
+    public static final float MITAD_BANCO = 0.8f; // Medio largo del banco (mide 1.6): radio del círculo que lo contiene.
+
+    // ---- Luminarias peatonales tipo GLOBO (valores ajustables) ----
+    // Poste bajo con una esfera lechosa arriba, a escala de peatón: más baja y más simple que la farola de calle.
+    // Como el globo no tiene pantalla, su luz sale hacia TODOS lados: en el shader es una LUZ PUNTUAL (uGlobos).
+    public static final float ALTURA_GLOBO = 3.0f; // Centro del globo sobre el césped: la punta queda a 3.225 de alto.
+    public static final float DIAMETRO_GLOBO = 0.45f; // Esfera del globo.
+    public static final float ANCHO_BASE_GLOBO = 0.24f; // Diámetro de la base (zócalo) del poste.
+    public static final float ALTO_BASE_GLOBO = 0.3f; // Alto de esa base.
+    public static final float ANCHO_POSTE_GLOBO = 0.1f; // Diámetro del poste: fino, de parque.
+    public static final float ANCHO_ANILLO_GLOBO = 0.2f; // Portaglobo: anillo sobre el que se apoya la esfera.
+    public static final float ALTO_ANILLO_GLOBO = 0.1f; // Alto del portaglobo.
+    public static final float[] COLOR_POSTE_GLOBO = {0.12f, 0.15f, 0.13f}; // Verde casi negro, típico de parque.
+    public static final float[] COLOR_GLOBO_DIA = {0.86f, 0.87f, 0.85f}; // Vidrio lechoso apagado (recibe luz).
+    public static final float[] COLOR_GLOBO_NOCHE = {1.0f, 0.93f, 0.78f}; // Encendido: emisivo, blanco cálido.
+    // UBICACIÓN: sobre el BORDE de un sendero (no en el medio del camino), a DESVIO_LUMINARIA del eje del sendero y a
+    // una de las DISTANCIAS_LUMINARIA del centro del parque. Son 4 brazos × 3 distancias × 2 lados = 24 candidatas.
+    public static final float DESVIO_LUMINARIA = 0.5f; // Del eje del sendero al poste: la base (0.24) no sale del sendero (1.4).
+    public static final float[] DISTANCIAS_LUMINARIA = {2.4f, 3.0f, 3.6f}; // Del centro del parque: pasada la fuente y antes de la acera.
+    public static final float MARGEN_LUMINARIA = 0.15f; // Aire mínimo entre el globo o la base y un árbol o un banco.
+    public static final float MARGEN_LUMINARIA_POSTES = 0.5f; // Aire entre el globo y un semáforo, PARE, cartel o farola de la acera.
+    public static final int LUMINARIAS_MAX_POR_PARQUE = 2; // Tope por parque; baja a 1 si no entran en uGlobos (ver luminariasPorParque()).
+    /** Centro {x, y, z} del globo de cada luminaria de todos los parques: lo que Iluminacion envía como uGlobos. */
+    public static final List<float[]> LUMINARIAS = Collections.unmodifiableList(calcularLuminarias());
 
     // ==================== 2. VARIACIÓN DETERMINÍSTICA ====================
 
@@ -102,7 +128,7 @@ public class Parque {
             float[] lugar = LUGARES_ARBOL[(inicio + k * 5) % LUGARES_ARBOL.length]; // Salta de a 5: mezcla esquinas y bordes.
             float x = cx + lugar[0]; // Posición del tronco en X.
             float z = cz + lugar[1]; // Posición del tronco en Z.
-            if (cercaDeUnPoste(x, z)) { // Semáforo, PARE o farola en la acera cercana.
+            if (cercaDeUnPoste(x, z, COPA_MAXIMA / 2 + MARGEN_POSTES)) { // Semáforo, PARE o farola en la acera cercana.
                 continue; // Ese lugar se saltea.
             }
             int i = lista.size(); // Índice del árbol: distingue su variación de la de los demás.
@@ -129,9 +155,11 @@ public class Parque {
         return new float[] {x, z, tipo, alturaTronco, diametroCopa, verde, giro, altura - alturaTronco}; // El resto es copa.
     }
 
-    /** Indica si una copa en (x, z) tocaría un semáforo, un PARE, un cartel de sector o una farola. */
-    private static boolean cercaDeUnPoste(float x, float z) {
-        float copa = COPA_MAXIMA / 2 + MARGEN_POSTES; // Radio de la copa más ancha, con aire.
+    /**
+     * Indica si un objeto de radio "copa" (ya con su aire) centrado en (x, z) tocaría un semáforo, un PARE, un cartel de
+     * sector o una farola. Lo usan los árboles (radio de la copa más ancha), las luminarias y los basureros.
+     */
+    public static boolean cercaDeUnPoste(float x, float z, float copa) {
         for (float[] s : Senalizacion.SEMAFOROS) { // Semáforos del Centro.
             if (Math.hypot(x - s[0], z - s[1]) < copa + MITAD_SEMAFORO) { // La copa tocaría el cabezal.
                 return true; // Se descarta el lugar.
@@ -173,6 +201,94 @@ public class Parque {
         return lista; // Bancos del parque.
     }
 
+    // ==================== 3b. LUMINARIAS GLOBO ====================
+
+    /**
+     * Cuántas luminarias lleva cada parque: LUMINARIAS_MAX_POR_PARQUE si todas entran en el arreglo uGlobos del shader
+     * (Iluminacion.MAX_GLOBOS); si no, las que entren repartidas en partes iguales, pero nunca menos de 1. Con 6 parques
+     * son 2 (12 luces); con 9 o más parques, 1. Si hubiera más parques que MAX_GLOBOS, LuminariasParqueTest lo detecta.
+     */
+    public static int luminariasPorParque() {
+        int parques = Math.max(1, Mapa.parques().size()); // Evita dividir por cero en un mapa sin parques.
+        return Math.max(1, Math.min(LUMINARIAS_MAX_POR_PARQUE, Iluminacion.MAX_GLOBOS / parques));
+    }
+
+    /**
+     * Luminarias de un parque: cada una es {x, z} (el poste; el globo está ALTURA_GLOBO más arriba). REGLAS:
+     *  - SOBRE UN SENDERO: en el borde de uno de los cuatro brazos de la cruz (DESVIO_LUMINARIA del eje), a una de las
+     *    DISTANCIAS_LUMINARIA del centro: lejos de la fuente y antes de la acera;
+     *  - SIN CHOCAR CON ÁRBOLES: el globo está a la altura de las copas, así que se mide contra la copa real de cada árbol;
+     *  - SIN CHOCAR CON BANCOS: la base queda fuera del círculo que contiene al banco;
+     *  - LEJOS DE LOS POSTES de la acera (semáforos, PARE, carteles y farolas de calle);
+     *  - REPARTIDAS: la primera es la primera candidata válida desde un punto de partida propio del parque (variacion());
+     *    la segunda, la válida MÁS LEJANA a la primera (suele quedar en el brazo opuesto). Sin azar: siempre igual.
+     */
+    public static List<float[]> luminarias(int fila, int columna) {
+        float cx = Mapa.centro(columna); // Centro del parque en X.
+        float cz = Mapa.centro(fila); // Centro del parque en Z.
+        List<float[]> arboles = arboles(fila, columna); // Lo que ya ocupa el césped.
+        List<float[]> bancos = bancos(fila, columna);
+        int[][] brazos = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}}; // Dirección {x, z} de cada brazo: norte, sur, oeste y este.
+        List<float[]> validas = new ArrayList<>(); // Candidatas que cumplen todas las reglas, en orden.
+        int total = brazos.length * DISTANCIAS_LUMINARIA.length * 2; // 24 candidatas.
+        int inicio = entero(fila, columna, 11, 0, total - 1); // Por dónde empieza este parque.
+        for (int k = 0; k < total; k++) {
+            int n = (inicio + k) % total; // Candidata número n.
+            int[] brazo = brazos[n % brazos.length]; // Brazo de la cruz.
+            float distancia = DISTANCIAS_LUMINARIA[(n / brazos.length) % DISTANCIAS_LUMINARIA.length]; // Del centro.
+            int lado = n < total / 2 ? 1 : -1; // A un lado u otro del eje del sendero.
+            // Perpendicular al brazo: (-z, x). Se suma el desvío hacia un costado del sendero.
+            float x = cx + brazo[0] * distancia - brazo[1] * lado * DESVIO_LUMINARIA;
+            float z = cz + brazo[1] * distancia + brazo[0] * lado * DESVIO_LUMINARIA;
+            if (luminariaLibre(x, z, arboles, bancos)) {
+                validas.add(new float[] {x, z});
+            }
+        }
+        List<float[]> elegidas = new ArrayList<>(); // Resultado.
+        for (int i = 0; i < luminariasPorParque() && !validas.isEmpty(); i++) {
+            int mejor = 0; // La primera vez, la primera válida.
+            double mejorDistancia = -1;
+            for (int v = 0; i > 0 && v < validas.size(); v++) { // Desde la segunda: la más alejada de las ya elegidas.
+                double cercana = Double.MAX_VALUE;
+                for (float[] e : elegidas) {
+                    cercana = Math.min(cercana, Math.hypot(validas.get(v)[0] - e[0], validas.get(v)[1] - e[1]));
+                }
+                if (cercana > mejorDistancia) { // Estrictamente mayor: en empates queda la primera.
+                    mejor = v;
+                    mejorDistancia = cercana;
+                }
+            }
+            elegidas.add(validas.remove(mejor));
+        }
+        return elegidas; // Luminarias del parque.
+    }
+
+    /** Aplica las reglas de choque de luminarias(): árboles, bancos y postes de la acera. */
+    private static boolean luminariaLibre(float x, float z, List<float[]> arboles, List<float[]> bancos) {
+        for (float[] a : arboles) { // El globo (a 3 de altura) está entre las copas: se mide contra la copa real.
+            if (Math.hypot(x - a[0], z - a[1]) < a[4] / 2 + DIAMETRO_GLOBO / 2 + MARGEN_LUMINARIA) {
+                return false;
+            }
+        }
+        for (float[] b : bancos) { // La base no se apoya sobre el banco.
+            if (Math.hypot(x - b[0], z - b[1]) < MITAD_BANCO + ANCHO_BASE_GLOBO / 2 + MARGEN_LUMINARIA) {
+                return false;
+            }
+        }
+        return !cercaDeUnPoste(x, z, DIAMETRO_GLOBO / 2 + MARGEN_LUMINARIA_POSTES); // Semáforos, PARE, carteles, farolas.
+    }
+
+    /** Todas las luminarias de la ciudad como centro {x, y, z} del globo, parque por parque (orden de Mapa.parques()). */
+    private static List<float[]> calcularLuminarias() {
+        List<float[]> lista = new ArrayList<>();
+        for (int[] celda : Mapa.parques()) {
+            for (float[] l : luminarias(celda[0], celda[1])) {
+                lista.add(new float[] {l[0], TOPE_CESPED + ALTURA_GLOBO, l[1]}); // El mismo punto que dibuja dibujarLuminaria().
+            }
+        }
+        return lista;
+    }
+
     // ==================== 4. DIBUJO ====================
 
     private final Shader shader; // Programa que recibe el interruptor de emisión.
@@ -180,6 +296,7 @@ public class Parque {
     private final Figuras figuras; // Esfera, cilindro y cono.
     private final List<List<float[]>> arbolesPorParque = new ArrayList<>(); // Disposiciones calculadas una vez.
     private final List<List<float[]>> bancosPorParque = new ArrayList<>(); // Bancos calculados una vez.
+    private final List<List<float[]>> luminariasDeCadaParque = new ArrayList<>(); // Luminarias globo calculadas una vez.
     private final List<int[]> celdas = Mapa.parques(); // Parques del mapa, en el mismo orden que las listas anteriores.
 
     /** Calcula la disposición de todos los parques una sola vez (no hay azar por cuadro). */
@@ -190,10 +307,11 @@ public class Parque {
         for (int[] celda : celdas) { // Recorre los parques.
             arbolesPorParque.add(arboles(celda[0], celda[1])); // Árboles de este parque.
             bancosPorParque.add(bancos(celda[0], celda[1])); // Bancos de este parque.
+            luminariasDeCadaParque.add(luminarias(celda[0], celda[1])); // Luminarias globo de este parque.
         }
     }
 
-    /** Dibuja el parque de la celda (fila, columna): senderos, fuente, árboles y bancos. */
+    /** Dibuja el parque de la celda (fila, columna): senderos, fuente, árboles, bancos y luminarias. */
     public void dibujar(int fila, int columna, boolean noche) {
         int indice = indiceDe(fila, columna); // Posición del parque en las listas calculadas.
         float x = Mapa.centro(columna); // Centro del parque en X.
@@ -206,6 +324,28 @@ public class Parque {
         for (float[] banco : bancosPorParque.get(indice)) { // Bancos propios del parque.
             dibujarBanco(banco[0], banco[1], banco[2]); // Mirando a la fuente.
         }
+        for (float[] luminaria : luminariasDeCadaParque.get(indice)) { // Luminarias globo en el borde de los senderos.
+            dibujarLuminaria(luminaria[0], luminaria[1], noche); // Encendida solo de noche.
+        }
+    }
+
+    /**
+     * Luminaria GLOBO: base, poste fino, portaglobo y esfera. El centro de la esfera es el mismo punto que
+     * calcularLuminarias() guarda en LUMINARIAS y el shader usa como luz puntual. De noche el globo es emisivo.
+     */
+    private void dibujarLuminaria(float x, float z, boolean noche) {
+        float[] c = COLOR_POSTE_GLOBO; // Poste, base y portaglobo del mismo color.
+        float yGlobo = TOPE_CESPED + ALTURA_GLOBO; // Centro del globo.
+        float pie = TOPE_CESPED + ALTO_BASE_GLOBO; // Donde termina la base.
+        float yAnillo = yGlobo - DIAMETRO_GLOBO / 2 - ALTO_ANILLO_GLOBO / 2 + 0.03f; // El globo se apoya (y se hunde apenas) en el anillo.
+        float altoPoste = yAnillo - pie; // Del zócalo al portaglobo.
+        figuras.cilindro.dibujar(x, TOPE_CESPED + ALTO_BASE_GLOBO / 2, z, ANCHO_BASE_GLOBO, ALTO_BASE_GLOBO, ANCHO_BASE_GLOBO, c[0], c[1], c[2]); // Base.
+        figuras.cilindro.dibujar(x, pie + altoPoste / 2, z, ANCHO_POSTE_GLOBO, altoPoste, ANCHO_POSTE_GLOBO, c[0], c[1], c[2]); // Poste.
+        figuras.cilindro.dibujar(x, yAnillo, z, ANCHO_ANILLO_GLOBO, ALTO_ANILLO_GLOBO, ANCHO_ANILLO_GLOBO, c[0], c[1], c[2]); // Portaglobo.
+        float[] globo = noche ? COLOR_GLOBO_NOCHE : COLOR_GLOBO_DIA; // Encendido solo de noche, como las farolas.
+        shader.entero("uEmision", noche ? 1 : 0); // De noche el globo tiene luz propia.
+        figuras.esfera.dibujar(x, yGlobo, z, DIAMETRO_GLOBO, DIAMETRO_GLOBO, DIAMETRO_GLOBO, globo[0], globo[1], globo[2]); // Globo.
+        shader.entero("uEmision", 0); // Restablece el material normal.
     }
 
     /** Busca la posición del parque en la lista de celdas. */

@@ -9,14 +9,23 @@ import java.util.List; // Tipo de esas listas.
 /**
  * FACHADA: todo lo que se ve pegado a las paredes de un edificio.
  * Responsable de:
- *  - PLANTA BAJA: en cada cara que da a una calle, "vidriera | puerta | vidriera": la puerta oscura va CENTRADA y hay
- *    una vidriera de negocio a cada lado, con un toldo de color inclinado sobre cada vidriera (sin tapar la puerta) que
- *    sobresale un poco hacia la vereda. Con la puerta en el centro, ninguna queda junto a una esquina: dos caras vecinas
- *    nunca tienen puertas pegadas. Entre la última vidriera y la esquina queda MARGEN_ESQUINA. El color del toldo
- *    (rojo, verde, azul o naranja, a veces a rayas) se elige por celda con Variacion.
+ *  - PLANTA BAJA en cada cara que da a una calle, según el USO del edificio (UsoPlantaBaja.de: torre → lobby, casa baja
+ *    → casa; los demás, negocio en el Centro y sobre las avenidas principales, departamentos en los barrios). En todos
+ *    los usos la puerta va CENTRADA: ninguna queda junto a una esquina y dos caras vecinas nunca tienen puertas pegadas.
+ *     · COMERCIAL: "vidriera | puerta | vidriera", con un toldo de color inclinado sobre cada vidriera (sin tapar la
+ *       puerta) que sobresale un poco hacia la vereda. Entre la última vidriera y la esquina queda MARGEN_ESQUINA. El
+ *       color del toldo (rojo, verde, azul o naranja, a veces a rayas) se elige por celda con Variacion.
+ *     · LOBBY_OFICINAS: vidrio de piso a techo con parantes, puerta doble de vidrio oscuro y marquesina plana. De noche
+ *       el vidrio es emisivo pero suave (el hall iluminado se ve desde la calle, sin competir con las vidrieras).
+ *     · RESIDENCIAL: pared con dos ventanas comunes, puerta sobre un escalón y un alero chico encima de la puerta.
+ *     · CASA: puerta de madera sobre un escalón y dos ventanas; en algunas casas (Variacion) una de las ventanas de
+ *       una cara se reemplaza por un portón de garaje.
+ *    Las ventanas de planta baja de RESIDENCIAL y CASA son ventanas comunes (piso 0): de noche se encienden o no como
+ *    todas las demás.
  *  - VENTANAS en cada cara de cada volumen del edificio (Edificio.volumenes), con el patrón de su TipoEdificio: muchas
  *    y chicas en la torre, anchas en el bloque, pocas en la casa baja. Una ventana no se pone si la tapa otro volumen
- *    (la parte baja de un edificio doble, el nivel de abajo de un escalonado) ni sobre el negocio de la planta baja.
+ *    (la parte baja de un edificio doble, el nivel de abajo de un escalonado) ni en la planta baja de una cara a la
+ *    calle: ahí manda el uso (vidriera, hall o las ventanas propias de la planta baja, que esquivan la puerta).
  *    De DÍA son vidrio claro (blanco-celeste grisáceo) y reciben la luz del sol como cualquier superficie; de NOCHE
  *    cerca de PORCENTAJE_VENTANAS_ENCENDIDAS están encendidas (emisivas, con tonos de TONOS_VENTANA) y el resto apagadas
  *    (azul-gris muy oscuro). Cada ventana decide con un hash de edificio, volumen, cara, piso y columna: la misma
@@ -24,7 +33,7 @@ import java.util.List; // Tipo de esas listas.
  * El estado día/noche no se guarda aquí: Decoracion lo recibe de Juego, que lo lee de Iluminacion.esNoche().
  * Todo va sobre la pared o, como el toldo, sobre la vereda (VUELO_TOLDO): nada llega a la calzada ni cambia colisiones.
  * Se comunica con: Decoracion (la llama para cada edificio), Mapa (celdas, vecinos, ancho del edificio), Edificio y
- * TipoEdificio (volúmenes y patrón de ventanas), Variacion, Cubo y Shader.
+ * TipoEdificio (volúmenes y patrón de ventanas), UsoPlantaBaja, Variacion, Cubo y Shader.
  * Coordenadas de una cara: "u" recorre la pared de izquierda a derecha y "afuera" es la distancia desde el centro del
  * edificio en la dirección de la calle; ANCHO_EDIFICIO / 2 = 3.5 es el plano de la pared.
  */
@@ -47,7 +56,7 @@ public class Fachada {
     // de volúmenes vecinos quedan alineadas.
     public static final float MARGEN_VERTICAL = 0.35f; // Pared libre entre una ventana y la base o el tope de su volumen (y su losa).
     public static final float MARGEN_LATERAL = 0.3f; // Pared libre entre la última ventana y la esquina de su cara.
-    public static final float TOPE_PLANTA_BAJA = 2.8f; // En una cara con negocio, ninguna ventana baja de acá (el toldo está en 2.45).
+    public static final float TOPE_PLANTA_BAJA = 2.8f; // En una cara a la calle, ninguna ventana del patrón baja de acá (el toldo está en 2.45).
 
     // ==================== 2. PLANTA BAJA (valores ajustables) ====================
     public static final float[] COLOR_PUERTA = {0.14f, 0.11f, 0.09f}; // Madera muy oscura.
@@ -81,6 +90,42 @@ public class Fachada {
     public static final float ALTURA_TOLDO = 2.45f; // Altura del borde del toldo pegado a la pared.
     public static final float CAIDA_TOLDO = 0.3f; // Cuánto baja el toldo desde la pared hasta su borde exterior.
     public static final int ESCALONES_TOLDO = 3; // Cubo solo gira en Y: la inclinación se arma con escalones que bajan.
+
+    // ==================== 2b. PLANTA BAJA NO COMERCIAL (valores ajustables) ====================
+    // ---- Lobby de oficinas (torres): vidrio de piso a techo, puerta doble y marquesina ----
+    public static final float ANCHO_PUERTA_DOBLE = 1.6f; // Dos hojas de 0.8, centradas.
+    public static final float ALTO_PUERTA_LOBBY = 2.3f; // Más alta que la de un negocio: es la entrada de la torre.
+    public static final float SEPARACION_PUERTA_LOBBY = 0.1f; // Marco entre la puerta y cada paño de vidrio.
+    public static final float ALTO_VIDRIO_LOBBY = 2.9f; // De la acera (0.3) a 3.2: casi hasta la losa del podio (3.5).
+    public static final float SEPARACION_PARANTES = 1.0f; // Distancia máxima entre parantes (perfiles verticales) del vidrio.
+    public static final float ANCHO_PARANTE = 0.08f; // Ancho de cada parante.
+    public static final float[] COLOR_PARANTE = {0.22f, 0.23f, 0.25f}; // Aluminio oscuro.
+    public static final float[] COLOR_PUERTA_LOBBY = {0.10f, 0.12f, 0.14f}; // Vidrio oscuro de las hojas.
+    public static final float[] COLOR_VIDRIO_LOBBY_DIA = {0.42f, 0.55f, 0.62f}; // Vidrio azulado, sin emisión.
+    public static final float[] COLOR_VIDRIO_LOBBY_NOCHE = {0.50f, 0.54f, 0.55f}; // Emisivo SUAVE: más tenue que la vidriera (0.86).
+    public static final float ANCHO_MARQUESINA = 2.4f; // Losa plana sobre la puerta doble.
+    public static final float VUELO_MARQUESINA = 0.7f; // Igual que el toldo: mantener ≤ 0.8 para no tocar los postes de semáforo.
+    public static final float GROSOR_MARQUESINA = 0.12f;
+    public static final float[] COLOR_MARQUESINA = {0.30f, 0.31f, 0.33f}; // Hormigón oscuro.
+    // ---- Entrada residencial (departamentos) y de casa ----
+    public static final float ANCHO_VENTANA_PLANTA_BAJA = 1.4f; // Dos ventanas comunes, una a cada lado de la puerta.
+    public static final float CENTRO_VENTANA_PLANTA_BAJA = CENTRO_VIDRIERA; // 1.9: donde iría la vidriera; ventana de 1.2 a 2.6.
+    public static final float ALTO_ESCALON = 0.15f; // Escalón de la puerta: la puerta arranca sobre él.
+    public static final float FONDO_ESCALON = 0.35f; // Cuánto sale hacia la vereda.
+    public static final float EXCESO_ESCALON = 0.15f; // El escalón es esto más ancho que la puerta a cada lado.
+    public static final float[] COLOR_ESCALON = {0.62f, 0.60f, 0.56f}; // Hormigón claro.
+    public static final float ANCHO_ALERO = 1.6f; // Alero chico sobre la puerta (solo RESIDENCIAL).
+    public static final float VUELO_ALERO = 0.5f;
+    public static final float GROSOR_ALERO = 0.1f;
+    public static final float[] COLOR_ALERO = {0.35f, 0.33f, 0.31f};
+    public static final float[] COLOR_PUERTA_CASA = {0.42f, 0.26f, 0.14f}; // Madera más clara que la de un negocio.
+    public static final float PROBABILIDAD_GARAJE = 0.5f; // Fracción de casas con portón de garaje (en una sola cara).
+    public static final int SEMILLA_GARAJE = 29; // Elegida para que en este MAPA 2 de las 4 casas tengan garaje (5,1 y 7,1).
+    public static final float ANCHO_GARAJE = ANCHO_VIDRIERA; // 2.4: ocupa el lugar de una ventana, sin tocar la puerta.
+    public static final float ALTO_GARAJE = 2.2f; // Desde la acera: entra un auto (≈ 1.4).
+    public static final float[] COLOR_GARAJE = {0.70f, 0.71f, 0.72f}; // Chapa clara.
+    public static final int LISTONES_GARAJE = 5; // Líneas horizontales del portón (secciones).
+    public static final float[] COLOR_LISTON = {0.50f, 0.51f, 0.53f}; // Junta entre secciones, más oscura.
     private static final float ALTURA_ACERA = 0.3f; // El edificio se apoya sobre la acera (0.3 de alto).
     private static final float SEPARACION_PARED = 0.01f; // Todo lo pegado a la pared se separa 0.01 para que no parpadee.
     private static final float GROSOR_PEGADO = 0.04f; // Espesor de ventanas, puertas y vidrieras.
@@ -138,7 +183,7 @@ public class Fachada {
                 float anchoCara = normalEnX ? vol.anchoZ : vol.anchoX; // Largo de la pared.
                 float hastaCentro = normalEnX ? (vol.x - centroX) * dir[1] : (vol.z - centroZ) * dir[0]; // Corrimiento del volumen hacia afuera.
                 boolean enBorde = Math.abs(hastaCentro + mitad - Mapa.ANCHO_EDIFICIO / 2) < 1e-3f; // La pared está en el borde de la huella.
-                boolean conNegocio = enBorde && Mapa.esCalleSegura(fila + dir[0], columna + dir[1]); // Planta baja comercial.
+                boolean conPlantaBaja = enBorde && Mapa.esCalleSegura(fila + dir[0], columna + dir[1]); // Planta baja según el uso.
                 int n = columnasQueEntran(tipo, anchoCara); // Columnas de esta cara.
                 for (int piso = 0; ; piso++) { // Pisos desde la acera.
                     float y = PRIMER_PISO_Y + piso * tipo.alturaPiso; // Centro de las ventanas de este piso.
@@ -147,7 +192,7 @@ public class Fachada {
                     if (arriba > vol.yTope - MARGEN_VERTICAL) { // Ya no entra: los pisos siguientes tampoco.
                         break;
                     }
-                    if (abajo < vol.yBase + MARGEN_VERTICAL || (conNegocio && abajo < TOPE_PLANTA_BAJA)) { // Debajo del volumen o sobre el negocio.
+                    if (abajo < vol.yBase + MARGEN_VERTICAL || (conPlantaBaja && abajo < TOPE_PLANTA_BAJA)) { // Debajo del volumen o en la planta baja.
                         continue;
                     }
                     for (int col = 0; col < n; col++) { // Columnas centradas en la cara.
@@ -160,7 +205,70 @@ public class Fachada {
                 }
             }
         }
+        if (!UsoPlantaBaja.de(fila, columna).esVidriada()) { // Departamentos o casa: ventanas propias en la planta baja.
+            agregarVentanasPlantaBaja(fila, columna, tipo, volumenes, lista);
+        }
         return lista; // Ventanas del edificio.
+    }
+
+    /**
+     * Ventanas de la planta baja de RESIDENCIAL y CASA: en cada cara a la calle, una a cada lado de la puerta (en
+     * ±CENTRO_VENTANA_PLANTA_BAJA), salvo donde está el portón de garaje. Son del piso 0 del volumen que ocupa ese
+     * tramo de la pared (en un doble, la parte alta o la baja), con el alto de ventana del tipo.
+     */
+    private static void agregarVentanasPlantaBaja(int fila, int columna, TipoEdificio tipo, List<Edificio.Volumen> volumenes, List<Ventana> lista) {
+        float centroX = Mapa.centro(columna); // Centro de la manzana.
+        float centroZ = Mapa.centro(fila);
+        int[] garaje = garaje(fila, columna); // {cara, lado} o null.
+        for (int cara = 0; cara < Mapa.VECINOS.length; cara++) { // Norte, sur, oeste y este.
+            int[] dir = Mapa.VECINOS[cara];
+            if (!Mapa.esCalleSegura(fila + dir[0], columna + dir[1])) { // Solo las caras a la calle.
+                continue;
+            }
+            for (int col = 0; col < 2; col++) { // Izquierda (0) y derecha (1) de la puerta.
+                int lado = col == 0 ? -1 : 1;
+                if (garaje != null && garaje[0] == cara && garaje[1] == lado) { // Ahí va el portón.
+                    continue;
+                }
+                float u = lado * CENTRO_VENTANA_PLANTA_BAJA; // Posición a lo largo de la pared.
+                float[] p = puntoEnCara(centroX, centroZ, cara, u, Mapa.ANCHO_EDIFICIO / 2 + SEPARACION_PARED); // Delante de la pared.
+                float[] adentro = puntoEnCara(centroX, centroZ, cara, u, Mapa.ANCHO_EDIFICIO / 2 - 0.1f); // Apenas detrás: ¿qué volumen es?
+                float abajo = PRIMER_PISO_Y - tipo.altoVentana / 2;
+                float arriba = PRIMER_PISO_Y + tipo.altoVentana / 2;
+                for (int iv = 0; iv < volumenes.size(); iv++) { // El volumen que tiene esa pared a esa altura.
+                    Edificio.Volumen vol = volumenes.get(iv);
+                    boolean entra = abajo >= vol.yBase + MARGEN_VERTICAL && arriba <= vol.yTope - MARGEN_VERTICAL;
+                    if (vol.cubre(adentro[0], adentro[1]) && entra) {
+                        if (!tapada(volumenes, iv, p, abajo, arriba)) {
+                            lista.add(new Ventana(iv, cara, 0, col, p[0], p[1], PRIMER_PISO_Y, ANCHO_VENTANA_PLANTA_BAJA, tipo.altoVentana));
+                        }
+                        break; // Un solo volumen por ventana.
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Portón de garaje de una CASA: {cara, lado} (lado -1 = izquierda de la puerta, +1 = derecha) o null si la casa no
+     * tiene. Tienen garaje las casas con Variacion < PROBABILIDAD_GARAJE; la cara es la primera que da a la calle a
+     * partir de una sorteada, así siempre mira a una calle.
+     */
+    public static int[] garaje(int fila, int columna) {
+        if (UsoPlantaBaja.de(fila, columna) != UsoPlantaBaja.CASA
+            || Variacion.valor(fila, columna, 0, SEMILLA_GARAJE) >= PROBABILIDAD_GARAJE) {
+            return null; // Sin garaje.
+        }
+        int inicio = (int) (Variacion.valor(fila, columna, 1, SEMILLA_GARAJE) * Mapa.VECINOS.length); // Cara sorteada.
+        int lado = Variacion.valor(fila, columna, 2, SEMILLA_GARAJE) < 0.5f ? -1 : 1; // Izquierda o derecha.
+        for (int k = 0; k < Mapa.VECINOS.length; k++) { // A partir de la sorteada, la primera con calle.
+            int cara = (inicio + k) % Mapa.VECINOS.length;
+            int[] dir = Mapa.VECINOS[cara];
+            if (Mapa.esCalleSegura(fila + dir[0], columna + dir[1])) {
+                return new int[] {cara, lado};
+            }
+        }
+        return null; // Una casa sin calles alrededor (no pasa en este mapa).
     }
 
     /** Indica si otro volumen (con su losa) tapa la ventana en el punto p, entre las alturas abajo y arriba. */
@@ -283,10 +391,29 @@ public class Fachada {
 
     /** Dibuja la planta baja de las caras a la calle y las ventanas del edificio de la celda (fila, columna), con centro (x, z). */
     public void dibujar(int fila, int columna, float x, float z, boolean noche) {
+        UsoPlantaBaja uso = UsoPlantaBaja.de(fila, columna); // Negocio, hall, departamentos o casa.
+        int[] garaje = garaje(fila, columna); // {cara, lado} o null.
         for (int cara = 0; cara < Mapa.VECINOS.length; cara++) { // Norte, sur, oeste y este (mismo orden que Mapa.VECINOS).
             int[] vecino = Mapa.VECINOS[cara]; // {dFila, dColumna} hacia afuera de esta cara.
-            if (Mapa.esCalleSegura(fila + vecino[0], columna + vecino[1])) { // Las caras a la calle tienen negocio en planta baja.
-                dibujarPlantaBaja(fila, columna, x, z, cara, noche); // Puerta, vidriera (iluminada de noche) y toldo.
+            if (!Mapa.esCalleSegura(fila + vecino[0], columna + vecino[1])) { // Solo las caras a la calle tienen planta baja.
+                continue;
+            }
+            switch (uso) {
+                case COMERCIAL:
+                    dibujarPlantaBaja(fila, columna, x, z, cara, noche); // Puerta, vidriera (iluminada de noche) y toldo.
+                    break;
+                case LOBBY_OFICINAS:
+                    dibujarLobby(x, z, cara, noche); // Vidrio de piso a techo, puerta doble y marquesina.
+                    break;
+                case RESIDENCIAL:
+                    dibujarEntrada(x, z, cara, COLOR_PUERTA, true); // Puerta con escalón y alero.
+                    break;
+                default: // CASA.
+                    dibujarEntrada(x, z, cara, COLOR_PUERTA_CASA, false); // Puerta de madera con escalón.
+                    if (garaje != null && garaje[0] == cara) {
+                        dibujarGaraje(x, z, cara, garaje[1] * CENTRO_VENTANA_PLANTA_BAJA); // Portón en lugar de una ventana.
+                    }
+                    break;
             }
         }
         for (Ventana v : ventanasPorCelda.get(fila * Mapa.MAPA[0].length + columna)) { // Ventanas ya ubicadas.
@@ -337,6 +464,81 @@ public class Fachada {
         shader.entero("uEmision", 0); // Los toldos son tela: reciben luz normal.
         for (float[] tramo : tramosToldos()) { // Un toldo sobre cada vidriera; la puerta queda descubierta en el medio.
             dibujarToldo(fila, columna, x, z, cara, (tramo[0] + tramo[1]) / 2, tramo[1] - tramo[0]); // Toldo sobre la vidriera.
+        }
+    }
+
+    /**
+     * Hall de oficinas: dos paños de vidrio de piso a techo (de MARGEN_ESQUINA hasta el marco de la puerta), con parantes
+     * cada SEPARACION_PARANTES como máximo, un paño más sobre la puerta, la puerta doble de vidrio oscuro al centro y una
+     * marquesina plana que sale VUELO_MARQUESINA hacia la vereda. De noche el vidrio es emisivo suave; las hojas de la
+     * puerta, los parantes y la marquesina no brillan.
+     */
+    private void dibujarLobby(float x, float z, int cara, boolean noche) {
+        float pared = Mapa.ANCHO_EDIFICIO / 2 + SEPARACION_PARED + GROSOR_PEGADO / 2; // Plano apenas delante de la pared.
+        float[] vidrio = noche ? COLOR_VIDRIO_LOBBY_NOCHE : COLOR_VIDRIO_LOBBY_DIA; // El hall iluminado, o vidrio al sol.
+        float mediaPuerta = ANCHO_PUERTA_DOBLE / 2;
+        float inicioPano = mediaPuerta + SEPARACION_PUERTA_LOBBY; // Borde del paño junto a la puerta.
+        float finPano = Mapa.ANCHO_EDIFICIO / 2 - MARGEN_ESQUINA; // Borde del paño junto a la esquina.
+        float anchoPano = finPano - inicioPano;
+        float yVidrio = ALTURA_ACERA + ALTO_VIDRIO_LOBBY / 2; // Centro del vidrio: de la acera hacia arriba.
+        float altoSobrePuerta = ALTO_VIDRIO_LOBBY - ALTO_PUERTA_LOBBY; // Paño sobre la puerta.
+        shader.entero("uEmision", noche ? 1 : 0);
+        for (int lado = -1; lado <= 1; lado += 2) { // Paño izquierdo y derecho.
+            cajaEnCara(x, z, cara, lado * (inicioPano + anchoPano / 2), pared, yVidrio, anchoPano, ALTO_VIDRIO_LOBBY, GROSOR_PEGADO,
+                vidrio[0], vidrio[1], vidrio[2]);
+        }
+        cajaEnCara(x, z, cara, 0, pared, ALTURA_ACERA + ALTO_PUERTA_LOBBY + altoSobrePuerta / 2, ANCHO_PUERTA_DOBLE + 2 * SEPARACION_PUERTA_LOBBY,
+            altoSobrePuerta, GROSOR_PEGADO, vidrio[0], vidrio[1], vidrio[2]); // Vidrio sobre la puerta.
+        shader.entero("uEmision", 0); // El resto recibe luz normal.
+        float frente = pared + GROSOR_PEGADO; // Parantes y hojas, apenas delante del vidrio.
+        int tramos = (int) Math.ceil(anchoPano / SEPARACION_PARANTES); // Paños entre parantes.
+        for (int lado = -1; lado <= 1; lado += 2) {
+            for (int k = 0; k <= tramos; k++) { // Un parante en cada borde y entre tramos.
+                float u = lado * (inicioPano + k * anchoPano / tramos);
+                cajaEnCara(x, z, cara, u, frente, yVidrio, ANCHO_PARANTE, ALTO_VIDRIO_LOBBY, GROSOR_PEGADO,
+                    COLOR_PARANTE[0], COLOR_PARANTE[1], COLOR_PARANTE[2]);
+            }
+        }
+        float anchoHoja = mediaPuerta - ANCHO_PARANTE / 2; // Dos hojas separadas por un parante central.
+        for (int lado = -1; lado <= 1; lado += 2) {
+            cajaEnCara(x, z, cara, lado * (ANCHO_PARANTE / 2 + anchoHoja / 2), frente, ALTURA_ACERA + ALTO_PUERTA_LOBBY / 2, anchoHoja,
+                ALTO_PUERTA_LOBBY, GROSOR_PEGADO, COLOR_PUERTA_LOBBY[0], COLOR_PUERTA_LOBBY[1], COLOR_PUERTA_LOBBY[2]); // Hoja.
+        }
+        cajaEnCara(x, z, cara, 0, frente, ALTURA_ACERA + ALTO_PUERTA_LOBBY / 2, ANCHO_PARANTE, ALTO_PUERTA_LOBBY, GROSOR_PEGADO,
+            COLOR_PARANTE[0], COLOR_PARANTE[1], COLOR_PARANTE[2]); // Parante entre las hojas.
+        float yMarquesina = ALTURA_ACERA + ALTO_PUERTA_LOBBY + GROSOR_MARQUESINA; // Justo encima de la puerta.
+        cajaEnCara(x, z, cara, 0, Mapa.ANCHO_EDIFICIO / 2 + VUELO_MARQUESINA / 2, yMarquesina, ANCHO_MARQUESINA, GROSOR_MARQUESINA,
+            VUELO_MARQUESINA, COLOR_MARQUESINA[0], COLOR_MARQUESINA[1], COLOR_MARQUESINA[2]); // Marquesina plana.
+    }
+
+    /**
+     * Entrada de departamentos o de casa: escalón sobre la acera, puerta centrada que arranca sobre el escalón y, si
+     * "alero", un alero chico encima. Las ventanas de esta planta baja se dibujan con las demás (son Ventana del piso 0).
+     */
+    private void dibujarEntrada(float x, float z, int cara, float[] colorPuerta, boolean alero) {
+        float pared = Mapa.ANCHO_EDIFICIO / 2 + SEPARACION_PARED + GROSOR_PEGADO / 2; // Plano apenas delante de la pared.
+        float baseEscalon = ALTURA_ACERA; // El escalón se apoya en la acera...
+        float basePuerta = ALTURA_ACERA + ALTO_ESCALON; // ...y la puerta, sobre el escalón.
+        cajaEnCara(x, z, cara, 0, Mapa.ANCHO_EDIFICIO / 2 + FONDO_ESCALON / 2, baseEscalon + ALTO_ESCALON / 2,
+            ANCHO_PUERTA + 2 * EXCESO_ESCALON, ALTO_ESCALON, FONDO_ESCALON, COLOR_ESCALON[0], COLOR_ESCALON[1], COLOR_ESCALON[2]); // Escalón.
+        cajaEnCara(x, z, cara, 0, pared, basePuerta + ALTO_PUERTA / 2, ANCHO_PUERTA, ALTO_PUERTA, GROSOR_PEGADO,
+            colorPuerta[0], colorPuerta[1], colorPuerta[2]); // Puerta centrada.
+        if (alero) {
+            float yAlero = basePuerta + ALTO_PUERTA + GROSOR_ALERO; // Apenas encima del marco.
+            cajaEnCara(x, z, cara, 0, Mapa.ANCHO_EDIFICIO / 2 + VUELO_ALERO / 2, yAlero, ANCHO_ALERO, GROSOR_ALERO, VUELO_ALERO,
+                COLOR_ALERO[0], COLOR_ALERO[1], COLOR_ALERO[2]); // Alero chico.
+        }
+    }
+
+    /** Portón de garaje de chapa centrado en u, desde la acera, con LISTONES_GARAJE juntas horizontales. */
+    private void dibujarGaraje(float x, float z, int cara, float u) {
+        float pared = Mapa.ANCHO_EDIFICIO / 2 + SEPARACION_PARED + GROSOR_PEGADO / 2; // Plano apenas delante de la pared.
+        cajaEnCara(x, z, cara, u, pared, ALTURA_ACERA + ALTO_GARAJE / 2, ANCHO_GARAJE, ALTO_GARAJE, GROSOR_PEGADO,
+            COLOR_GARAJE[0], COLOR_GARAJE[1], COLOR_GARAJE[2]); // Portón.
+        float seccion = ALTO_GARAJE / (LISTONES_GARAJE + 1); // Alto de cada sección.
+        for (int k = 1; k <= LISTONES_GARAJE; k++) { // Juntas entre secciones.
+            cajaEnCara(x, z, cara, u, pared + GROSOR_PEGADO / 2, ALTURA_ACERA + k * seccion, ANCHO_GARAJE, 0.04f, GROSOR_PEGADO / 2,
+                COLOR_LISTON[0], COLOR_LISTON[1], COLOR_LISTON[2]);
         }
     }
 

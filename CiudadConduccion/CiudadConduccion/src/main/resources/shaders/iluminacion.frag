@@ -62,6 +62,16 @@ uniform vec3 uFarosTrafico[MAX_FAROS_TRAFICO]; // Posición de cada foco de trá
 uniform vec3 uDireccionFarosTrafico[MAX_FAROS_TRAFICO]; // Dirección de avance del vehículo dueño de cada foco.
 uniform int uNumFarosTrafico; // Cuántos focos están en uso; de día vale 0 y el bucle no calcula nada.
 
+// Luminarias GLOBO de los parques: LUZ PUNTUAL. Arreglo propio (no comparten uLuces con las farolas de calle): cada
+// tipo de luz tiene su fórmula y el bucle no necesita preguntar "¿esta es foco o puntual?" en cada iteración.
+const int MAX_GLOBOS = 16; // Tamaño de uGlobos; debe coincidir con Iluminacion.MAX_GLOBOS.
+const vec3 COLOR_GLOBO = vec3(1.0, 0.86, 0.62); // Blanco cálido, más claro que el sodio de las farolas de calle.
+const float INTENSIDAD_GLOBO = 2.2; // Menor que la farola: es una luz peatonal, baja y cercana.
+const float GLOBO_ATENUACION_LINEAL = 0.25; // Atenuación = 1 + LINEAL · d + CUADRATICA · d²: más fuerte que la farola,
+const float GLOBO_ATENUACION_CUADRATICA = 0.10; // así la luz queda en el parque (radio útil ≈ 5) y no invade la calle.
+uniform vec3 uGlobos[MAX_GLOBOS]; // Centro de cada globo (Parque.LUMINARIAS), enviado por Iluminacion.preparar().
+uniform int uNumGlobos; // Cuántos globos están en uso.
+
 // ==================== LUZ PUNTUAL vs. FOCO ====================
 // Luz PUNTUAL (omnidireccional): emite igual hacia todos lados; solo importan la distancia (atenuación) y
 // cuánto mira la cara hacia la luz (difusa). Ilumina también lo que está por encima o al costado de la fuente.
@@ -69,6 +79,8 @@ uniform int uNumFarosTrafico; // Cuántos focos están en uso; de día vale 0 y 
 // punto de dos vectores unitarios se obtiene el coseno de ese ángulo. Si el ángulo supera el borde exterior, no llega luz.
 // La farola tiene una pantalla que la tapa por arriba: una luz puntual iluminaría las paredes por encima de la pantalla,
 // algo imposible en la realidad. Por eso la farola es un foco apuntando hacia abajo, igual que los faros del auto.
+// La luminaria GLOBO de los parques, en cambio, es una esfera de vidrio sin pantalla: la luz sale hacia todos lados
+// (también hacia arriba, e ilumina las copas de los árboles desde abajo). Por eso es una luz PUNTUAL: sin cono.
 
 // ==================== FUNCIÓN DE CONO (factor 0..1 con borde suave) ====================
 // Devuelve 1 dentro del cono interior, 0 fuera del exterior y una transición suave entre ambos.
@@ -139,6 +151,13 @@ void main() { // Se ejecuta para cada fragmento visible de una caja.
             float atenuacion = 1.0 + FAROLA_ATENUACION_LINEAL * distancia + FAROLA_ATENUACION_CUADRATICA * distancia * distancia; // Reduce el alcance con la distancia.
             vec3 colorFarola = COLOR_FAROLA; // Define el tono cálido de la farola.
             luz += colorFarola * cono * difusa * INTENSIDAD_FAROLA / atenuacion; // Suma el aporte atenuado de esta bombilla, solo dentro del cono.
+        }
+        for (int indice = 0; indice < uNumGlobos; indice++) { // Luminarias globo: luz PUNTUAL, sin factor de cono.
+            vec3 haciaLuz = uGlobos[indice] - vMundo; // De la superficie al globo.
+            float distancia = length(haciaLuz); // Distancia recorrida por la luz.
+            float difusa = max(dot(normal, normalize(haciaLuz)), 0.0); // Lambert: solo importa hacia dónde mira la cara.
+            float atenuacion = 1.0 + GLOBO_ATENUACION_LINEAL * distancia + GLOBO_ATENUACION_CUADRATICA * distancia * distancia;
+            luz += COLOR_GLOBO * difusa * INTENSIDAD_GLOBO / atenuacion; // Igual hacia todos lados: no hay pantalla.
         }
     }
 

@@ -2,6 +2,7 @@ package com.graphics.ciudad.iluminacion; // Agrupa el estado de las luces de la 
 
 import com.graphics.ciudad.motor.Cubo; // Cada sombra es una caja muy fina.
 import com.graphics.ciudad.motor.Shader; // Modo sombra (uSombra), forma y opacidad.
+import com.graphics.ciudad.mundo.Basureros; // Cestos de basura.
 import com.graphics.ciudad.mundo.Edificio; // Huella de los edificios.
 import com.graphics.ciudad.mundo.Entorno; // Árboles del campo.
 import com.graphics.ciudad.mundo.Mapa; // Celdas de edificio y de parque.
@@ -15,7 +16,7 @@ import static org.lwjgl.opengl.GL33.*; // Mezcla (blending) y máscara de profun
 
 /**
  * SOMBRAS FALSAS ("blob shadows"): una mancha oscura y semitransparente en el suelo, debajo de cada edificio, auto,
- * árbol y banco. No se calcula desde dónde viene la luz (eso serían sombras reales, mucho más caras): solo se oscurece
+ * árbol, banco, basurero y luminaria de parque. No se calcula desde dónde viene la luz (eso serían sombras reales, mucho más caras): solo se oscurece
  * el suelo bajo el objeto, y eso alcanza para que parezca "apoyado" y no flotando.
  *
  * FORMA CON BORDES DIFUSOS: cada sombra se dibuja con el cubo aplastado (GROSOR_SOMBRA de alto), del tamaño y con el
@@ -60,6 +61,8 @@ public class Sombras {
     public static final float[] SOMBRA_AUTO = {2.3f, 3.5f}; // Ancho y largo de la mancha de un auto (el auto mide 1.65 × 2.6).
     public static final float ESCALA_SOMBRA_ARBOL = 1.25f; // Diámetro de la mancha respecto de la copa.
     public static final float[] SOMBRA_BANCO = {2.1f, 1.0f}; // Ancho y fondo de la mancha de un banco (mide 1.6 × 0.5).
+    public static final float ESCALA_SOMBRA_BASURERO = 1.6f; // Diámetro de la mancha respecto del basurero (0.5 → 0.8).
+    public static final float SOMBRA_LUMINARIA = 0.7f; // Diámetro de la mancha al pie de una luminaria globo (base de 0.24).
 
     // Sombras de lo que no se mueve, calculadas una vez: cada una es {x, y, z, anchoX, anchoZ, angulo, forma, nucleo}.
     public static final List<float[]> FIJAS = Collections.unmodifiableList(calcularFijas());
@@ -93,6 +96,13 @@ public class Sombras {
             for (float[] b : Parque.bancos(celda[0], celda[1])) { // Bancos: siguen su orientación.
                 lista.add(new float[] {b[0], y, b[1], SOMBRA_BANCO[0], SOMBRA_BANCO[1], b[2], FORMA_REDONDA, NUCLEO_SOMBRA});
             }
+            for (float[] l : Parque.luminarias(celda[0], celda[1])) { // Luminarias globo: mancha chica al pie del poste.
+                lista.add(new float[] {l[0], y, l[1], SOMBRA_LUMINARIA, SOMBRA_LUMINARIA, 0, FORMA_REDONDA, NUCLEO_SOMBRA});
+            }
+        }
+        for (float[] b : Basureros.UBICACIONES) { // Basureros {x, yBase, z, tipo}: sobre el césped o la acera.
+            float diametro = Basureros.DIAMETRO * ESCALA_SOMBRA_BASURERO;
+            lista.add(new float[] {b[0], b[1] + ELEVACION_SOMBRA, b[2], diametro, diametro, 0, FORMA_REDONDA, NUCLEO_SOMBRA});
         }
         for (float[] a : Entorno.ARBOLES) { // Árboles del campo, sobre el pasto.
             float diametro = a[4] * ESCALA_SOMBRA_ARBOL; // Proporcional a la copa.

@@ -5,6 +5,7 @@ import com.graphics.ciudad.motor.Malla; // Figura con la que se dibuja cada piez
 import com.graphics.ciudad.motor.Shader; // Recibe los uniforms de iluminación.
 import com.graphics.ciudad.mundo.Decoracion; // Pasos peatonales: las farolas no van sobre ellos.
 import com.graphics.ciudad.mundo.Mapa; // Convierte celdas de manzana en coordenadas y da la dirección de cada lado.
+import com.graphics.ciudad.mundo.Parque; // Luminarias globo de los parques (luces puntuales).
 import com.graphics.ciudad.mundo.Senalizacion; // Semáforos, PARE y carteles: las farolas se alejan de ellos.
 import com.graphics.ciudad.vehiculo.Auto; // Aporta la posición y el frente para los faros.
 import java.util.ArrayList; // Lista de piezas de cada farola.
@@ -12,10 +13,11 @@ import java.util.List; // Tipo de esa lista.
 import static org.lwjgl.glfw.GLFW.*; // Incluye las constantes de las teclas N y F.
 
 /**
- * ILUMINACION: sol, farolas y focos del vehículo.
+ * ILUMINACION: sol, farolas, luminarias de parque y focos del vehículo.
  * Responsable de: el estado día/noche (N) y faros (F), las ubicaciones LUCES de las farolas (13 con FAROLAS_POR_SECTOR), el envío de
  * esos datos al shader iluminacion.frag, el modelo y el dibujo de las farolas y el texto de estado para el título.
- * Se comunica con: Shader (uniforms uNoche, uFaros, uEmision, uLuces, uAuto, uFrente, uRotacion), Figuras (farolas), Auto
+ * Se comunica con: Shader (uniforms uNoche, uFaros, uEmision, uLuces, uGlobos, uAuto, uFrente, uRotacion), Figuras (farolas), Parque
+ * (posición de las luminarias globo, que son luces PUNTUALES: van en uGlobos, no en uLuces), Auto
  * (posición y frente de los faros) y Juego (teclas, título y orden de dibujo). Decoracion usa esNoche().
  * El shader calcula iluminación local, sin sombras reales; Sombras agrega manchas oscuras (sombras falsas) bajo los objetos.
  *
@@ -38,6 +40,7 @@ public class Iluminacion {
     private boolean noche = NOCHE_AL_INICIAR; // Inicia la escena de día; la tecla N alterna la iluminación nocturna.
     private boolean faros = true; // Inicia los focos del auto encendidos.
     public static final int MAX_LUCES = 16; // Tamaño del arreglo uLuces[16] del shader: no se pueden enviar más farolas.
+    public static final int MAX_GLOBOS = 16; // Tamaño de uGlobos[16]: luces PUNTUALES de las luminarias de parque (Parque.LUMINARIAS).
 
     // ---- Forma y ubicación de las farolas (valores ajustables) ----
     public static final int NORTE = 0; // Lado de la manzana que da a la calle del norte (índice de Mapa.VECINOS).
@@ -265,6 +268,14 @@ public class Iluminacion {
             float y = BOMBILLAS[indice][1]; // Lee su altura sobre el suelo.
             float z = BOMBILLAS[indice][2]; // Lee su coordenada en profundidad.
             shader.vector("uLuces[" + indice + "]", x, y, z); // Envía esa posición al arreglo GLSL.
+        }
+        // Luminarias globo de los parques: otro arreglo, porque son luces PUNTUALES (sin pantalla) y no focos.
+        // Como las farolas, el shader solo las recorre de noche (de día quedan "apagadas").
+        int globos = Math.min(Parque.LUMINARIAS.size(), MAX_GLOBOS); // Nunca más de las que caben en uGlobos.
+        shader.entero("uNumGlobos", globos);
+        for (int indice = 0; indice < globos; indice++) {
+            float[] g = Parque.LUMINARIAS.get(indice); // Centro del globo: el mismo punto que dibuja Parque.
+            shader.vector("uGlobos[" + indice + "]", g[0], g[1], g[2]);
         }
 
         float frenteX = -(float) Math.sin(auto.getAngulo()); // Calcula hacia dónde apunta el auto en X.

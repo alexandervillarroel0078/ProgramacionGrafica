@@ -12,7 +12,7 @@ public enum TipoEdificio {
     // Medidas en metros (1 u ≈ 1 m). Una ventana real mide ≈ 1.2-1.5 de alto; el piso, Edificio.ALTO_PISO = 3.
     // Con alto 1.4 y el centro de la fila a 1.4 del piso (Fachada.PRIMER_PISO_Y), queda un antepecho de ≈ 0.7.
 
-    /** Alta y angosta sobre un podio comercial; en la azotea, antena o tanque de agua. Ventanas angostas y juntas. */
+    /** Alta y angosta sobre un podio con el hall de oficinas; en la azotea, antena o tanque de agua. Ventanas angostas y juntas. */
     TORRE(3, 1.3f, 0.9f, 1.4f, Edificio.ALTO_PISO),
     /** El edificio clásico de altura media, con baranda en la azotea y caja de ascensor. Pocas ventanas, anchas. */
     BLOQUE(2, 3.0f, 2.0f, 1.4f, Edificio.ALTO_PISO),

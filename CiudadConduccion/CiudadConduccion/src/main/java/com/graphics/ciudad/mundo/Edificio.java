@@ -59,7 +59,7 @@ public class Edificio {
     public static final int PISOS_TORRE_MIN = 8; // Torre: la más alta de la ciudad (24.2 a 33.2 de pared).
     public static final int PISOS_TORRE_MAX = 11;
     public static final float ANCHO_TORRE = 4.4f; // Lado de la torre: angosta sobre el podio de 7.
-    public static final float ALTURA_PODIO = ALTO_MINIMO_BASE; // Podio comercial de la torre: solo la planta baja.
+    public static final float ALTURA_PODIO = ALTO_MINIMO_BASE; // Podio de la torre (hall de oficinas): solo la planta baja.
     public static final float ALTO_ANTENA = 3.5f; // Antena: mástil fino sobre la azotea.
     public static final float GROSOR_ANTENA = 0.12f;
     public static final float DIAMETRO_TANQUE = 1.6f; // Tanque de agua: cilindro sobre cuatro patas.
@@ -242,7 +242,7 @@ public class Edificio {
         float[] pared = PALETA_FACHADAS[colorPared(fila, columna)]; // Color principal.
         List<Volumen> lista = new ArrayList<>(); // Resultado.
         switch (tipo(fila, columna)) {
-            case TORRE: { // Podio de 7 × 7 con el negocio y, encima, la torre angosta.
+            case TORRE: { // Podio de 7 × 7 con el hall y, encima, la torre angosta.
                 float tope = ALTURA_ACERA + alturaPared(entero(fila, columna, SEMILLA_ALTURA, PISOS_TORRE_MIN, PISOS_TORRE_MAX));
                 float podio = ALTURA_ACERA + ALTURA_PODIO; // Tope del podio.
                 lista.add(new Volumen(x, z, ancho, ancho, ALTURA_ACERA, podio, pared)); // Podio.

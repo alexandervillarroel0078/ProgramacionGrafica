@@ -29,7 +29,10 @@ public class AmbienteTest extends TestCase {
         assertTrue(Cielo.direccionLuna()[1] > 0); // La luna está en el cielo, no bajo el suelo.
     }
 
-    /** Hay una sombra fija por edificio, árbol y banco, y ninguna sale de la superficie donde se apoya. */
+    /**
+     * Hay una sombra fija por edificio, árbol, banco, luminaria de parque y basurero, y ninguna sale de la superficie
+     * donde se apoya.
+     */
     public void testSombrasFijas() {
         int esperadas = Entorno.ARBOLES.size(); // Árboles del campo.
         for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
@@ -41,7 +44,9 @@ public class AmbienteTest extends TestCase {
         }
         for (int[] p : Mapa.parques()) {
             esperadas += Parque.arboles(p[0], p[1]).size() + Parque.bancos(p[0], p[1]).size(); // Árboles y bancos.
+            esperadas += Parque.luminarias(p[0], p[1]).size(); // Luminarias globo.
         }
+        esperadas += com.graphics.ciudad.mundo.Basureros.UBICACIONES.size(); // Basureros de parques y veredas.
         assertEquals(esperadas, Sombras.FIJAS.size());
         for (float[] s : Sombras.FIJAS) {
             int fila = Mapa.indiceCelda(s[2]); // Celda donde cae la sombra.
@@ -56,7 +61,7 @@ public class AmbienteTest extends TestCase {
             assertTrue(!Mapa.esCalle(fila, columna)); // Las sombras fijas nunca caen en la calle.
             float medio = Mapa.tipo(fila, columna) == Mapa.PARQUE ? Parque.MITAD_CESPED : Mapa.TAM_CELDA / 2; // Césped o acera.
             float radio = Math.max(s[3], s[4]) / 2; // Mitad de la mancha (cota que vale con cualquier giro).
-            if (s[5] == 0) { // Sin giro (edificios y árboles): la mancha entera queda sobre su superficie.
+            if (s[5] == 0) { // Sin giro (edificios, árboles, luminarias y basureros): la mancha entera queda sobre su superficie.
                 assertTrue("sombra en " + s[0] + "," + s[2], Math.abs(s[0] - cx) + s[3] / 2 <= medio + 1e-4f);
                 assertTrue(Math.abs(s[2] - cz) + s[4] / 2 <= medio + 1e-4f);
             } else { // Bancos: giran, alcanza con el radio.

@@ -11,7 +11,8 @@ import java.util.List; // Tipo de la lista de ubicaciones.
  * DECORACION: detalles urbanos de la ciudad terminada.
  * Responsable de: decidir qué decoración corresponde a cada parcela del Mapa y dibujar parques (delegados en Parque:
  * senderos, fuente, árboles y bancos), fachadas de los edificios (delegadas en Fachada: planta baja comercial y
- * ventanas según día/noche) y pasos peatonales; delega en Senalizacion los semáforos, PARE y carteles.
+ * ventanas según día/noche) y pasos peatonales; delega en Senalizacion los semáforos, PARE y carteles, y en Basureros
+ * los cestos de basura.
  * Se comunica con: Mapa (celdas, intersecciones y parques), Cubo y Shader (dibujo y emisión), Senalizacion (señales y
  * cruces con semáforo) y Ciudad (que corta la línea amarilla con hayPasoSobre()).
  * Juego la dibuja solo en la vista principal; en el minimapa se omite, y le pasa el estado de noche de
@@ -47,6 +48,7 @@ public class Decoracion {
     private final Senalizacion senalizacion; // Dibuja semáforos, PARE y carteles de sector.
     private final Parque parque; // Dibuja senderos, fuente, árboles y bancos de cada parque.
     private final Fachada fachada; // Dibuja puertas, vidrieras, toldos y ventanas de los edificios.
+    private final Basureros basureros; // Cestos de los parques, las esquinas y algunos negocios.
 
     /** Recibe el shader, el cubo y las figuras compartidas, y prepara la señalización y los parques. */
     public Decoracion(Shader shader, Cubo cubo, Figuras figuras) {
@@ -54,6 +56,7 @@ public class Decoracion {
         this.senalizacion = new Senalizacion(shader, cubo, figuras); // Un mismo objeto dibuja todas las señales.
         this.parque = new Parque(shader, cubo, figuras); // Calcula una vez la disposición de todos los parques.
         this.fachada = new Fachada(shader, cubo); // Un mismo objeto dibuja las fachadas de todos los edificios.
+        this.basureros = new Basureros(figuras); // Ubicaciones ya calculadas en Basureros.UBICACIONES.
     }
 
     // ==================== UBICACIÓN DE LOS PASOS PEATONALES ====================
@@ -151,7 +154,7 @@ public class Decoracion {
                     parque.dibujar(fila, columna, noche); // Añade senderos, fuente, árboles y bancos propios de este parque.
                 }
                 if (tipo == Mapa.EDIFICIO) { // Detecta una parcela con edificio.
-                    fachada.dibujar(fila, columna, x, z, noche); // Planta baja comercial y ventanas según el tipo (vidrio de día, variadas de noche).
+                    fachada.dibujar(fila, columna, x, z, noche); // Planta baja según el uso (negocio, hall, departamentos o casa) y ventanas según el tipo (vidrio de día, variadas de noche).
                 }
             }
         }
@@ -159,6 +162,7 @@ public class Decoracion {
         for (float[] paso : UBICACIONES_PASOS) { // Los pasos se dibujan una vez cada uno, desde la lista.
             dibujarPasoPeatonal(paso[0], paso[1], paso[2] == 1); // Añade el cruce pintado de vereda a vereda.
         }
+        basureros.dibujar(); // Cestos de basura: parques, esquinas con paso y negocios.
     }
 
     /** Dibuja las franjas blancas de un paso: paralelas al sentido de circulación y repartidas a lo ancho de la calle. */

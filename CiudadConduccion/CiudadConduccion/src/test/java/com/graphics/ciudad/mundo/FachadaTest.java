@@ -83,8 +83,14 @@ public class FachadaTest extends TestCase {
             int[] dir = Mapa.VECINOS[v.cara]; // Hacia dónde mira la ventana.
             float afuera = (v.x - Mapa.centro(columna)) * dir[1] + (v.z - Mapa.centro(fila)) * dir[0]; // Distancia al centro de la manzana.
             boolean enBorde = afuera > Mapa.ANCHO_EDIFICIO / 2 - 1e-3f; // Sobre la pared exterior de la huella.
-            boolean conNegocio = enBorde && Mapa.esCalleSegura(fila + dir[0], columna + dir[1]); // Esa cara tiene planta baja comercial.
-            assertTrue(!conNegocio || v.y - v.alto / 2 >= Fachada.TOPE_PLANTA_BAJA - 1e-4f); // Nunca sobre el negocio ni el toldo.
+            boolean aLaCalle = enBorde && Mapa.esCalleSegura(fila + dir[0], columna + dir[1]); // Esa cara tiene planta baja.
+            boolean vidriada = UsoPlantaBaja.de(fila, columna).esVidriada(); // Negocio u hall de oficinas.
+            assertTrue(!(aLaCalle && vidriada) || v.y - v.alto / 2 >= Fachada.TOPE_PLANTA_BAJA - 1e-4f); // Nunca sobre la vidriera, el hall ni el toldo.
+            if (aLaCalle && v.y - v.alto / 2 < Fachada.TOPE_PLANTA_BAJA) { // Ventana de planta baja (departamentos o casa).
+                float u = (v.x - Mapa.centro(columna)) * -dir[0] + (v.z - Mapa.centro(fila)) * dir[1]; // Eje u de la cara.
+                boolean separada = Math.abs(u) - v.ancho / 2 >= Fachada.ANCHO_PUERTA / 2 + Fachada.SEPARACION_PUERTA - 1e-4f;
+                assertTrue("ventana sobre la puerta en " + fila + "," + columna, separada); // No tapa la puerta.
+            }
             for (int i = 0; i < volumenes.size(); i++) { // Los demás volúmenes.
                 Edificio.Volumen otro = volumenes.get(i);
                 boolean adentro = i != v.volumen && otro.cubre(v.x, v.z) && v.y > otro.yBase && v.y < otro.yTope; // Tapada.
@@ -225,5 +231,81 @@ public class FachadaTest extends TestCase {
                 }
             }
         }
+    }
+
+    /**
+     * Departamentos y casas: cada cara a la calle tiene ventanas en la planta baja (dos, o una si ahí está el portón),
+     * y de noche se encienden como las demás (alguna encendida y alguna apagada en la ciudad).
+     */
+    public void testVentanasDePlantaBajaResidencial() {
+        boolean hayEncendida = false;
+        boolean hayApagada = false;
+        for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
+            for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                if (Mapa.tipo(fila, columna) != Mapa.EDIFICIO || UsoPlantaBaja.de(fila, columna).esVidriada()) {
+                    continue; // Solo departamentos y casas.
+                }
+                int[] garaje = Fachada.garaje(fila, columna);
+                for (int cara = 0; cara < Mapa.VECINOS.length; cara++) {
+                    int[] dir = Mapa.VECINOS[cara];
+                    if (!Mapa.esCalleSegura(fila + dir[0], columna + dir[1])) {
+                        continue;
+                    }
+                    int n = 0; // Ventanas del piso 0 en esta cara.
+                    for (Fachada.Ventana v : Fachada.ventanas(fila, columna)) {
+                        if (v.cara == cara && v.y - v.alto / 2 < Fachada.TOPE_PLANTA_BAJA) {
+                            n++;
+                            int tono = Fachada.tonoVentana(fila, columna, v);
+                            hayEncendida |= tono >= 0;
+                            hayApagada |= tono < 0;
+                        }
+                    }
+                    int esperadas = garaje != null && garaje[0] == cara ? 1 : 2;
+                    assertEquals(fila + "," + columna + " cara " + cara, esperadas, n);
+                }
+            }
+        }
+        assertTrue(hayEncendida && hayApagada); // Mismo reparto que el resto: unas encendidas y otras no.
+    }
+
+    /** Algunas casas tienen portón de garaje y otras no; solo las casas, siempre en una cara a la calle, sin tocar la puerta. */
+    public void testGarajeSoloEnAlgunasCasas() {
+        int con = 0;
+        int sin = 0;
+        for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
+            for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                if (Mapa.tipo(fila, columna) != Mapa.EDIFICIO) {
+                    continue;
+                }
+                int[] g = Fachada.garaje(fila, columna);
+                if (UsoPlantaBaja.de(fila, columna) != UsoPlantaBaja.CASA) {
+                    assertNull(g); // Garaje solo en casas.
+                    continue;
+                }
+                if (g == null) {
+                    sin++;
+                    continue;
+                }
+                con++;
+                assertTrue(Mapa.esCalleSegura(fila + Mapa.VECINOS[g[0]][0], columna + Mapa.VECINOS[g[0]][1])); // Mira a la calle.
+                float borde = Fachada.CENTRO_VENTANA_PLANTA_BAJA - Fachada.ANCHO_GARAJE / 2; // Borde del portón junto a la puerta.
+                assertTrue(borde >= Fachada.ANCHO_PUERTA / 2 + Fachada.SEPARACION_PUERTA - 1e-4f); // No toca la puerta.
+                assertTrue(Fachada.CENTRO_VENTANA_PLANTA_BAJA + Fachada.ANCHO_GARAJE / 2
+                    <= Mapa.ANCHO_EDIFICIO / 2 - Fachada.MARGEN_ESQUINA + 1e-4f); // Ni la esquina.
+            }
+        }
+        assertTrue("casas con garaje", con > 0);
+        assertTrue("casas sin garaje", sin > 0);
+    }
+
+    /** Marquesina, alero y escalón quedan sobre la vereda, sin llegar a la calzada ni a los postes (como el toldo). */
+    public void testSalientesDePlantaBajaSobreLaVereda() {
+        float maximo = Fachada.VUELO_TOLDO; // Lo que ya se sabe que no toca postes ni calzada.
+        assertTrue(Fachada.VUELO_MARQUESINA <= maximo);
+        assertTrue(Fachada.VUELO_ALERO <= maximo);
+        assertTrue(Fachada.FONDO_ESCALON <= maximo);
+        assertTrue(Fachada.ANCHO_PUERTA_DOBLE / 2 + Fachada.SEPARACION_PUERTA_LOBBY
+            < Mapa.ANCHO_EDIFICIO / 2 - Fachada.MARGEN_ESQUINA); // Queda vidrio a cada lado de la puerta doble.
+        assertTrue(Fachada.ALTO_VIDRIO_LOBBY < Edificio.ALTURA_PODIO); // El vidrio termina bajo la losa del podio.
     }
 }
