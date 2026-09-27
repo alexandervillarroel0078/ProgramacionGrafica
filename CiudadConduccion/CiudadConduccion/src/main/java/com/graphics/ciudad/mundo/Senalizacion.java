@@ -1,7 +1,8 @@
 package com.graphics.ciudad.mundo; // Agrupa lo que forma la ciudad: mapa, edificios, decoración y señales.
 
 import com.graphics.ciudad.motor.Cubo; // Dibuja postes, placas y símbolos.
-import com.graphics.ciudad.motor.Shader; // Lo necesita Semaforo para la emisión de las bombillas.
+import com.graphics.ciudad.motor.Figuras; // Cilindros de los semáforos.
+import com.graphics.ciudad.motor.Shader; // Lo necesita Semaforo para la emisión de las lentes.
 import com.graphics.ciudad.motor.Texto; // Convierte el nombre de cada sector en rectángulos para el cartel.
 import java.util.ArrayList; // Listas calculadas de semáforos y señales.
 import java.util.Collections; // Publica las listas sin permitir modificarlas desde afuera.
@@ -23,7 +24,7 @@ import java.util.List; // Tipo de esas listas.
  *    con el mismo nombre que muestran el HUD y el minimapa.
  * Todo se apoya sobre la vereda, dentro de la celda de una manzana: nada ocupa la calle ni participa en colisiones.
  * Se comunica con: Mapa (intersecciones, accesos, sectores), Semaforo (dibuja cada cabezal y coordina colores),
- * Texto (letras del cartel), Cubo y Shader, y Decoracion (la llama en cada cuadro y usa INTERSECCIONES_SEMAFORO para
+ * Texto (letras del cartel), Cubo, Figuras y Shader, y Decoracion (la llama en cada cuadro y usa INTERSECCIONES_SEMAFORO para
  * los pasos peatonales).
  * Limitación: Cubo solo gira alrededor de Y, así que el octógono del PARE se aproxima con rectángulos superpuestos.
  */
@@ -150,17 +151,17 @@ public class Senalizacion {
     private final Semaforo semaforo; // Dibuja cada cabezal y calcula su color.
     private final float[][][] letrasCartel = new float[CARTELES_SECTOR.length][][]; // Rectángulos de cada nombre (se calculan una vez).
 
-    /** Recibe el shader y el cubo con el que se arman las señales. */
-    public Senalizacion(Shader shader, Cubo cubo) {
+    /** Recibe el shader, el cubo con el que se arman las señales y las figuras redondeadas de los semáforos. */
+    public Senalizacion(Shader shader, Cubo cubo, Figuras figuras) {
         this.cubo = cubo; // Guarda la referencia para usarla en cada cuadro.
-        this.semaforo = new Semaforo(shader, cubo); // Un mismo objeto dibuja todos los cabezales.
+        this.semaforo = new Semaforo(shader, cubo, figuras); // Un mismo objeto dibuja todos los cabezales.
     }
 
     /** Dibuja semáforos, PARE y carteles; tiempo es el reloj global de Juego (anima los semáforos). */
     public void dibujar(float tiempo) {
         for (float[] s : SEMAFOROS) { // Recorre los cabezales.
             int activa = Semaforo.luzParaAcceso(tiempo, s[3] == 1); // Calcula una sola vez qué bombilla corresponde a este instante y a este grupo.
-            semaforo.dibujar(s[0], s[1], s[2], activa); // Poste, carcasa y bombillas mirando al acceso.
+            semaforo.dibujar(s[0], s[1], s[2], activa); // Base, poste, caja, lentes y viseras mirando al acceso.
         }
         for (float[] p : PARES) { // Recorre los PARE.
             dibujarPare(p[0], p[1], p[2]); // Octógono rojo con borde blanco.

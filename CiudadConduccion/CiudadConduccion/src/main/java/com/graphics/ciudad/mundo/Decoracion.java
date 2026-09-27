@@ -48,7 +48,7 @@ public class Decoracion {
     /** Recibe el shader, el cubo y las figuras compartidas, y prepara la señalización y los parques. */
     public Decoracion(Shader shader, Cubo cubo, Figuras figuras) {
         this.cubo = cubo; // Guarda la geometría compartida.
-        this.senalizacion = new Senalizacion(shader, cubo); // Un mismo objeto dibuja todas las señales.
+        this.senalizacion = new Senalizacion(shader, cubo, figuras); // Un mismo objeto dibuja todas las señales.
         this.parque = new Parque(shader, cubo, figuras); // Calcula una vez la disposición de todos los parques.
         this.fachada = new Fachada(shader, cubo); // Un mismo objeto dibuja las fachadas de todos los edificios.
     }

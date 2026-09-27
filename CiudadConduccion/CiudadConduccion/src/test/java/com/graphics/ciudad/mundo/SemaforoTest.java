@@ -52,4 +52,64 @@ public class SemaforoTest extends TestCase {
             }
         }
     }
+
+    /**
+     * En cada fase del ciclo hay exactamente una lente emisiva, y es la del color de la fase con su color intenso; las
+     * otras dos existen, con el mismo color muy oscuro y sin emisión. Nada más del cabezal brilla.
+     */
+    public void testUnaLenteEmisivaPorFase() {
+        for (float t = 0; t < Semaforo.CICLO; t += PASO_MUESTREO) { // Recorre un ciclo completo.
+            int activa = Semaforo.luzActiva(t); // Color de la fase en este instante.
+            int emisivas = 0; // Lentes encendidas encontradas.
+            int lentes = 0; // Lentes encontradas.
+            for (Semaforo.Pieza p : Semaforo.modelo(activa)) { // Recorre el cabezal.
+                if (p.parte != Semaforo.Parte.LENTE) { // Base, poste, caja y viseras...
+                    assertFalse(p.emisiva); // ...reciben la iluminación normal.
+                    continue;
+                }
+                lentes++;
+                float[] intenso = Semaforo.COLORES_LENTE[p.luz]; // Color propio de esta lente.
+                if (p.emisiva) { // La encendida...
+                    emisivas++;
+                    assertEquals("t=" + t, activa, p.luz); // ...es la de la fase...
+                    assertSame(intenso, p.color); // ...con su color intenso.
+                } else { // Las apagadas: mismo color, muy oscuro.
+                    for (int c = 0; c < 3; c++) {
+                        assertEquals(intenso[c] * Semaforo.BRILLO_APAGADA, p.color[c], 1e-6f);
+                    }
+                }
+            }
+            assertEquals(3, lentes); // Siempre se ven las tres.
+            assertEquals("t=" + t, 1, emisivas); // Exactamente una encendida.
+        }
+    }
+
+    /** Rojo arriba, amarillo al medio y verde abajo, todas dentro del alto de la caja y en su cara delantera. */
+    public void testLentesOrdenadasEnElFrente() {
+        assertTrue(Semaforo.alturaLente(Semaforo.ROJA) > Semaforo.alturaLente(Semaforo.AMARILLA));
+        assertTrue(Semaforo.alturaLente(Semaforo.AMARILLA) > Semaforo.alturaLente(Semaforo.VERDE));
+        float techo = Semaforo.BASE_CAJA + Semaforo.ALTO_CAJA; // Borde superior de la caja.
+        for (Semaforo.Pieza p : Semaforo.modelo(Semaforo.ROJA)) {
+            if (p.parte == Semaforo.Parte.LENTE) {
+                assertEquals(Semaforo.alturaLente(p.luz), p.y, 0f); // Cada lente a la altura de su color.
+                assertTrue(p.y - Semaforo.DIAMETRO_LENTE / 2 > Semaforo.BASE_CAJA); // No se sale por abajo...
+                assertTrue(p.y + Semaforo.DIAMETRO_LENTE / 2 < techo); // ...ni por arriba.
+                assertTrue(p.z < -Semaforo.PROFUNDIDAD_CAJA / 2); // Delante de la caja, hacia el tráfico.
+            }
+            if (p.parte == Semaforo.Parte.VISERA) {
+                assertTrue(p.y < techo); // Las viseras quedan bajo el techo de la caja.
+            }
+        }
+    }
+
+    /** La espalda de la caja queda lisa: ninguna pieza sobresale por detrás (Z local positiva). */
+    public void testEspaldaLisa() {
+        for (Semaforo.Pieza p : Semaforo.modelo(Semaforo.VERDE)) {
+            if (p.parte == Semaforo.Parte.LENTE || p.parte == Semaforo.Parte.VISERA) {
+                assertTrue(p.parte + " por detrás del frente", p.z < -Semaforo.PROFUNDIDAD_CAJA / 2); // Solo en el frente.
+            } else {
+                assertEquals(0f, p.z, 0f); // Base, poste y caja centrados: la espalda es la cara trasera de la caja.
+            }
+        }
+    }
 }
