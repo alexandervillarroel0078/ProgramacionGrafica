@@ -344,6 +344,25 @@ public class Fachada {
         return new float[] {-ANCHO_PUERTA / 2, ANCHO_PUERTA / 2}; // Del -0.5 al 0.5: lejos de ambas esquinas.
     }
 
+    /**
+     * EJES DE ACCESO de una cara: las posiciones u (a lo largo de la cara, mismo eje que puntoEnCara) por donde se entra
+     * al edificio. Toda cara a la calle tiene su puerta CENTRADA (u = 0), sea cual sea el uso de planta baja: la de
+     * vidrio del negocio, la doble del lobby, la del escalón de departamentos o la de madera de la casa. Si la casa
+     * tiene el portón de GARAJE en esta cara, su eje también cuenta (por ahí sale un auto). Una cara sin calle no tiene
+     * accesos. Lo usa Iluminacion para no plantar una farola frente a una entrada.
+     */
+    public static float[] ejesDeAcceso(int fila, int columna, int cara) {
+        int[] v = Mapa.VECINOS[cara];
+        if (Mapa.tipo(fila, columna) != Mapa.EDIFICIO || !Mapa.esCalleSegura(fila + v[0], columna + v[1])) {
+            return new float[0]; // Sin edificio o sin calle: no hay puerta.
+        }
+        int[] garaje = garaje(fila, columna); // {cara, lado} o null.
+        if (garaje != null && garaje[0] == cara) {
+            return new float[] {0, garaje[1] * CENTRO_VENTANA_PLANTA_BAJA}; // Puerta y portón.
+        }
+        return new float[] {0}; // Solo la puerta centrada.
+    }
+
     /** Tramos {uMin, uMax} de las dos vidrieras, una a cada lado de la puerta. */
     public static float[][] tramosVidrieras() {
         return new float[][] { // Izquierda y derecha, simétricas.

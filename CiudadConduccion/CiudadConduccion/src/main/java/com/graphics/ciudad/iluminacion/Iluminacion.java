@@ -4,6 +4,7 @@ import com.graphics.ciudad.motor.Figuras; // Cilindro, esfera y cono (los mismos
 import com.graphics.ciudad.motor.Malla; // Figura con la que se dibuja cada pieza de la farola.
 import com.graphics.ciudad.motor.Shader; // Recibe los uniforms de iluminación.
 import com.graphics.ciudad.mundo.Decoracion; // Pasos peatonales: las farolas no van sobre ellos.
+import com.graphics.ciudad.mundo.Fachada; // Puertas y portones (ejes de acceso) y el eje u de cada cara.
 import com.graphics.ciudad.mundo.Mapa; // Convierte celdas de manzana en coordenadas y da la dirección de cada lado.
 import com.graphics.ciudad.mundo.Parque; // Luminarias globo de los parques (luces puntuales).
 import com.graphics.ciudad.mundo.Senalizacion; // Semáforos, PARE y carteles: las farolas se alejan de ellos.
@@ -79,14 +80,24 @@ public class Iluminacion {
     public static final float[] COLOR_BOMBILLA_DIA = {0.82f, 0.82f, 0.80f}; // Gris claro, apagada y sin emisión.
     public static final float[] COLOR_BOMBILLA_NOCHE = {1.0f, 0.92f, 0.72f}; // Blanco cálido, emisiva.
 
-    // FORMATO DE LUCES: cada farola es {fila, columna, lado}. (fila, columna) es una celda de MANZANA CON EDIFICIO
-    // y lado indica qué borde de esa manzana da a la calle donde va la farola: NORTE, SUR, OESTE o ESTE. El poste se
-    // ubica en el centro de ese borde, MARGEN_POSTE hacia adentro de la acera, y la bombilla BRAZO_FAROLA hacia la calle.
+    // FORMATO DE LUCES: cada farola es {fila, columna, lado, sentido}. (fila, columna) es una celda de MANZANA CON
+    // EDIFICIO y lado indica qué borde de esa manzana da a la calle donde va la farola: NORTE, SUR, OESTE o ESTE. El poste
+    // se ubica MARGEN_POSTE hacia adentro de la acera, corrido DESPLAZAMIENTO_FAROLA del centro del borde a lo largo de la
+    // cuadra, hacia un lado (sentido = -1) o el otro (sentido = 1), y la bombilla BRAZO_FAROLA hacia la calle.
     // Las ubicaciones no se escriben a mano: las elige calcularLuces() con los criterios de la sección 1b.
     public static final int[] FAROLAS_POR_SECTOR = {3, 3, 3, 2, 2}; // Centro, Barrio Norte, Parque Sur, Zona Oeste, Zona Este (13).
     public static final float SEPARACION_SENALES = 3; // Distancia mínima del poste a un semáforo, PARE o cartel.
     public static final float HOLGURA_POSTE_PASO = 0.3f; // Media base del poste (con margen): no toca un paso peatonal.
     public static final float HOLGURA_BOMBILLA_PASO = 0.35f; // Medio ancho de la pantalla (con margen): no cuelga sobre un paso.
+    // FAROLAS FRENTE A LAS PUERTAS: la puerta de todo edificio está en el centro de la fachada (Fachada.ejesDeAcceso) y
+    // la cuadra mide lo mismo que la manzana, así que una farola "a mitad de cuadra" quedaba justo delante de la puerta:
+    // quien sale se lleva el poste por delante. Por eso el poste se corre DESPLAZAMIENTO_FAROLA a lo largo de la cuadra
+    // y debe quedar al menos a DISTANCIA_MIN_PUERTA del eje de cada acceso de esa cara (la puerta de cualquier uso y el
+    // portón de garaje de las casas). Con 2.0, la base (0.42) deja casi 1 libre hasta el marco de la puerta más ancha
+    // (la doble del lobby, 1.6), y el poste sigue a 3 de la esquina, dentro de la franja de mobiliario.
+    public static final float DESPLAZAMIENTO_FAROLA = 2.0f; // Del centro del borde al poste, a lo largo de la cuadra.
+    public static final float DISTANCIA_MIN_PUERTA = 1.5f; // Mínimo entre el poste y el eje de una puerta o portón.
+    public static final int[] SENTIDOS = {-1, 1}; // Hacia qué lado del centro se corre el poste (se prueban los dos).
     public static final int[][] LUCES = calcularLuces();
     /** Posición {x, z} de cada poste, calculada desde LUCES. */
     public static final float[][] POSTES = calcularPosiciones(MARGEN_POSTE);
@@ -100,18 +111,24 @@ public class Iluminacion {
     private static float[][] calcularPosiciones(float haciaAdentro) {
         float[][] posiciones = new float[LUCES.length][]; // Una posición por farola.
         for (int i = 0; i < LUCES.length; i++) { // Recorre las farolas.
-            posiciones[i] = posicion(LUCES[i], haciaAdentro); // Punto en el centro del borde.
+            posiciones[i] = posicion(LUCES[i], haciaAdentro); // Punto sobre el borde, corrido a lo largo de la cuadra.
         }
         return posiciones; // Posiciones calculadas.
     }
 
-    /** {x, z} en el centro del borde "lado" de la manzana, a "haciaAdentro" del cordón (negativo = sobre la calle). */
+    /** Posición u del poste a lo largo de la cara (mismo eje que Fachada.puntoEnCara): sentido · DESPLAZAMIENTO_FAROLA. */
+    static float desplazamiento(int[] farola) {
+        return farola[3] * DESPLAZAMIENTO_FAROLA;
+    }
+
+    /**
+     * {x, z} sobre el borde "lado" de la manzana, a "haciaAdentro" del cordón (negativo = sobre la calle) y corrido
+     * desplazamiento() a lo largo de la cuadra. Usa Fachada.puntoEnCara(), la misma cuenta con la que se ubican puertas
+     * y portones: así la distancia a una puerta se mide en el mismo eje u, sin conversiones.
+     */
     private static float[] posicion(int[] farola, float haciaAdentro) {
-        int[] haciaCalle = Mapa.VECINOS[farola[2]]; // {dFila, dColumna} del lado que da a la calle.
-        float distancia = Mapa.TAM_CELDA / 2 - haciaAdentro; // Del centro de la manzana al punto buscado.
-        float x = Mapa.centro(farola[1]) + haciaCalle[1] * distancia; // Las columnas son X.
-        float z = Mapa.centro(farola[0]) + haciaCalle[0] * distancia; // Las filas son Z.
-        return new float[] {x, z};
+        float afuera = Mapa.TAM_CELDA / 2 - haciaAdentro; // Del centro de la manzana hacia la calle.
+        return Fachada.puntoEnCara(Mapa.centro(farola[1]), Mapa.centro(farola[0]), farola[2], desplazamiento(farola), afuera);
     }
 
     // ==================== 1b. REGLAS PARA UBICAR LAS FAROLAS ====================
@@ -123,18 +140,27 @@ public class Iluminacion {
      *    queda en la franja de mobiliario y solo la bombilla sobresale sobre la calzada (nunca el poste en la calle).
      *    Los parques quedan afuera: se iluminan con sus globos, y su acera de 0.5 es demasiado angosta. Una farola en
      *    la vereda de ENFRENTE de un parque sí vale: está sobre la acera de un edificio;
-     *  - A MITAD DE CUADRA: el poste va en el centro del borde, lo más lejos posible de las dos esquinas (lo garantiza
-     *    posicion());
+     *  - CERCA DE MITAD DE CUADRA, PERO NO FRENTE A UNA PUERTA: el poste se corre DESPLAZAMIENTO_FAROLA del centro del
+     *    borde (hacia "sentido") y queda a DISTANCIA_MIN_PUERTA o más del eje de cada acceso de esa cara: la puerta
+     *    centrada de cualquier uso de planta baja y, en las casas, el portón de garaje. Sigue lejos de las esquinas;
      *  - EN SU SECTOR: el poste cae dentro del sector que se está iluminando;
      *  - LEJOS DE LAS SEÑALES: a SEPARACION_SENALES o más de cada semáforo, PARE y cartel (no se tapan entre sí);
-     *  - FUERA DE LOS PASOS PEATONALES: ni el poste ni la bombilla quedan sobre un paso.
+     *  - FUERA DE LOS PASOS PEATONALES: ni el poste ni la bombilla quedan sobre un paso. Los pasos ocupan de 1.5 a 4.5
+     *    del centro de la cuadra, del lado de su cruce: con el poste corrido, la bombilla colgaría sobre el paso si lo
+     *    hay de ese lado, así que en esas cuadras vale solo el sentido contrario.
+     * Los basureros no se miran acá: Basureros se calcula después y esquiva los postes (Parque.cercaDeUnPoste()).
      */
-    static boolean farolaValida(int fila, int columna, int lado, int sector) {
+    static boolean farolaValida(int fila, int columna, int lado, int sentido, int sector) {
         int[] haciaCalle = Mapa.VECINOS[lado]; // Dirección de la calle.
         if (Mapa.tipo(fila, columna) != Mapa.EDIFICIO || !Mapa.esCalleSegura(fila + haciaCalle[0], columna + haciaCalle[1])) {
             return false; // No es la vereda de un edificio (es calle o parque), o ese lado no da a una calle.
         }
-        int[] farola = {fila, columna, lado};
+        int[] farola = {fila, columna, lado, sentido};
+        for (float eje : Fachada.ejesDeAcceso(fila, columna, lado)) { // Puerta centrada y, si hay, portón de garaje.
+            if (Math.abs(desplazamiento(farola) - eje) < DISTANCIA_MIN_PUERTA) {
+                return false; // El poste quedaría delante de una entrada.
+            }
+        }
         float[] poste = posicion(farola, MARGEN_POSTE); // Sobre la acera.
         float[] bombilla = posicion(farola, MARGEN_POSTE - BRAZO_FAROLA); // Punta del brazo, sobre la calzada.
         if (Mapa.sector(poste[0], poste[1]) != sector) {
@@ -159,18 +185,21 @@ public class Iluminacion {
      * SEPARADAS POSIBLE de todas las ya ubicadas (en su sector y en los anteriores): cada vez se toma la candidata cuya
      * farola más cercana está más lejos ("punto más lejano"). La primera de todas es la más alejada del origen. Así la
      * luz se reparte por toda la ciudad, sin farolas amontonadas. En empates gana la primera en el orden fila, columna,
-     * lado (siempre el mismo resultado).
+     * lado, sentido (siempre el mismo resultado). Cada borde aporta hasta dos candidatas, una por sentido (a 4 entre
+     * sí); como se busca la más alejada de las ya elegidas, dos farolas en el mismo borde serían muy poco probables.
      */
     private static int[][] calcularLuces() {
-        List<int[]> elegidas = new ArrayList<>(); // {fila, columna, lado}.
+        List<int[]> elegidas = new ArrayList<>(); // {fila, columna, lado, sentido}.
         List<float[]> postes = new ArrayList<>(); // Postes de las elegidas.
         for (int sector = 0; sector < FAROLAS_POR_SECTOR.length && sector < Mapa.SECTORES.length; sector++) {
-            List<int[]> candidatas = new ArrayList<>(); // Bordes válidos del sector.
+            List<int[]> candidatas = new ArrayList<>(); // Bordes (y sentidos) válidos del sector.
             for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
                 for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
                     for (int lado = 0; lado < Mapa.VECINOS.length; lado++) { // NORTE, SUR, OESTE, ESTE.
-                        if (farolaValida(fila, columna, lado, sector)) {
-                            candidatas.add(new int[] {fila, columna, lado});
+                        for (int sentido : SENTIDOS) { // A un lado y al otro de la puerta.
+                            if (farolaValida(fila, columna, lado, sentido, sector)) {
+                                candidatas.add(new int[] {fila, columna, lado, sentido});
+                            }
                         }
                     }
                 }

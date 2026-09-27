@@ -23,7 +23,7 @@ public class FarolasTest extends TestCase {
         assertTrue(Iluminacion.LUCES.length >= 9); // Mínimo pedido.
         assertTrue(Iluminacion.LUCES.length <= Iluminacion.MAX_LUCES); // No puede superar el arreglo uLuces del shader.
         for (int i = 0; i < Iluminacion.LUCES.length; i++) { // Revisa cada farola.
-            int[] f = Iluminacion.LUCES[i]; // {fila, columna, lado}.
+            int[] f = Iluminacion.LUCES[i]; // {fila, columna, lado, sentido}.
             String que = "farola " + f[0] + "," + f[1] + " lado " + f[2]; // Mensaje de error útil.
             assertEquals(que, Mapa.EDIFICIO, Mapa.tipo(f[0], f[1])); // La celda es una manzana con edificio.
             int[] haciaCalle = Mapa.VECINOS[f[2]]; // Dirección del lado indicado.
@@ -68,8 +68,8 @@ public class FarolasTest extends TestCase {
     }
 
     /**
-     * Reglas de ubicación: cada farola es válida (vereda, sector, lejos de señales y pasos), está a mitad de cuadra
-     * (centro del borde de su manzana) y cada sector tiene exactamente su cuota.
+     * Reglas de ubicación: cada farola es válida (vereda, sector, lejos de puertas, señales y pasos), está corrida
+     * exactamente DESPLAZAMIENTO_FAROLA del centro del borde de su manzana y cada sector tiene exactamente su cuota.
      */
     public void testReglasDeUbicacion() {
         int[] porSector = new int[Mapa.SECTORES.length]; // Farolas encontradas en cada sector.
@@ -78,12 +78,13 @@ public class FarolasTest extends TestCase {
             float[] poste = Iluminacion.POSTES[i];
             int sector = Mapa.sector(poste[0], poste[1]);
             porSector[sector]++;
-            assertTrue("farola " + i, Iluminacion.farolaValida(f[0], f[1], f[2], sector)); // Cumple todos los criterios.
+            assertTrue("farola " + i, Iluminacion.farolaValida(f[0], f[1], f[2], f[3], sector)); // Cumple todos los criterios.
+            assertTrue("sentido", f[3] == -1 || f[3] == 1);
             int[] haciaCalle = Mapa.VECINOS[f[2]];
             if (haciaCalle[0] != 0) { // Borde norte o sur: la cuadra corre en X.
-                assertEquals(Mapa.centro(f[1]), poste[0], EPSILON); // A mitad de cuadra.
+                assertEquals(Iluminacion.DESPLAZAMIENTO_FAROLA, Math.abs(poste[0] - Mapa.centro(f[1])), EPSILON); // Corrida del centro.
             } else { // Borde oeste o este: la cuadra corre en Z.
-                assertEquals(Mapa.centro(f[0]), poste[1], EPSILON);
+                assertEquals(Iluminacion.DESPLAZAMIENTO_FAROLA, Math.abs(poste[1] - Mapa.centro(f[0])), EPSILON);
             }
             for (int j = 0; j < i; j++) { // Sin repetir el mismo borde.
                 assertFalse(java.util.Arrays.equals(f, Iluminacion.LUCES[j]));
@@ -102,8 +103,11 @@ public class FarolasTest extends TestCase {
     public void testNingunaFarolaEnUnParque() {
         for (int[] p : Mapa.parques()) { // La regla descarta cualquier borde de parque.
             for (int lado = 0; lado < Mapa.VECINOS.length; lado++) {
-                for (int sector = 0; sector < Mapa.SECTORES.length; sector++) {
-                    assertFalse("parque " + p[0] + "," + p[1] + " lado " + lado, Iluminacion.farolaValida(p[0], p[1], lado, sector));
+                for (int sentido : Iluminacion.SENTIDOS) {
+                    for (int sector = 0; sector < Mapa.SECTORES.length; sector++) {
+                        assertFalse("parque " + p[0] + "," + p[1] + " lado " + lado,
+                            Iluminacion.farolaValida(p[0], p[1], lado, sentido, sector));
+                    }
                 }
             }
         }
@@ -119,6 +123,45 @@ public class FarolasTest extends TestCase {
                     com.graphics.ciudad.mundo.Parque.tocaPavimento(p[0], p[1], poste[0], poste[1], radioBase));
             }
         }
+    }
+
+    /**
+     * Ninguna farola queda frente a una entrada: para cada edificio y cada cara a la calle, si el poste está en la
+     * vereda de esa cara (entre la pared y el cordón, a lo largo de la cara), su distancia al eje de cada acceso
+     * (puerta centrada de cualquier uso y portón de garaje) es al menos DISTANCIA_MIN_PUERTA. Se revisan todos los
+     * edificios, no solo el de la farola, por si un poste cayera frente a la puerta de otro.
+     */
+    public void testNingunaFarolaFrenteAUnaPuerta() {
+        int revisadas = 0; // Pares (farola, cara) en los que el poste está frente a la cara.
+        for (int i = 0; i < Iluminacion.POSTES.length; i++) {
+            float[] poste = Iluminacion.POSTES[i];
+            for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
+                for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                    for (int cara = 0; cara < Mapa.VECINOS.length; cara++) {
+                        float[] ejes = com.graphics.ciudad.mundo.Fachada.ejesDeAcceso(fila, columna, cara);
+                        if (ejes.length == 0) {
+                            continue; // Sin puerta en esa cara.
+                        }
+                        int[] v = Mapa.VECINOS[cara];
+                        float relX = poste[0] - Mapa.centro(columna);
+                        float relZ = poste[1] - Mapa.centro(fila);
+                        float afuera = relX * v[1] + relZ * v[0]; // Hacia la calle (normal de la cara).
+                        float u = relX * -v[0] + relZ * v[1]; // A lo largo de la cara (eje u de Fachada.puntoEnCara).
+                        boolean frente = afuera >= Mapa.ANCHO_EDIFICIO / 2 && afuera <= Mapa.TAM_CELDA / 2
+                            && Math.abs(u) <= Mapa.TAM_CELDA / 2;
+                        if (!frente) {
+                            continue; // El poste no está en la vereda de esta cara.
+                        }
+                        revisadas++;
+                        for (float eje : ejes) {
+                            assertTrue("farola " + i + " a " + Math.abs(u - eje) + " del acceso de " + fila + "," + columna,
+                                Math.abs(u - eje) >= Iluminacion.DISTANCIA_MIN_PUERTA - EPSILON);
+                        }
+                    }
+                }
+            }
+        }
+        assertEquals("cada poste está frente a una sola cara", Iluminacion.POSTES.length, revisadas);
     }
 
     /** Busca la única pieza BOMBILLA del modelo de una farola. */
