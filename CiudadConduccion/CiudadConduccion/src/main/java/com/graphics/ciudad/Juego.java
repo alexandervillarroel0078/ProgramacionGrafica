@@ -1,6 +1,8 @@
 package com.graphics.ciudad; // Paquete raíz de la versión organizada por composición.
 
+import com.graphics.ciudad.iluminacion.Cielo; // Fondo con degradado, estrellas y luna.
 import com.graphics.ciudad.iluminacion.Iluminacion; // Sol, farolas y faros.
+import com.graphics.ciudad.iluminacion.Sombras; // Manchas oscuras (sombras falsas) bajo los objetos.
 import com.graphics.ciudad.interfaz.Dibujo2D; // Pase 2D con paneles y texto (STBEasyFont).
 import com.graphics.ciudad.interfaz.Hud; // Panel de estado, ayuda, pausa y menú dentro de la ventana.
 import com.graphics.ciudad.juego.EstadoPartida; // Menú de inicio, partida en curso o pausa.
@@ -13,6 +15,7 @@ import com.graphics.ciudad.motor.Shader; // Programa GLSL y envío de uniforms.
 import com.graphics.ciudad.motor.Ventana; // Ventana GLFW, teclado y presentación.
 import com.graphics.ciudad.mundo.Ciudad; // Asfalto, calles, edificios y parques.
 import com.graphics.ciudad.mundo.Decoracion; // Árboles, bancos, ventanas, pasos peatonales y semáforos.
+import com.graphics.ciudad.mundo.Entorno; // Campo verde, cordón y árboles alrededor de la ciudad.
 import com.graphics.ciudad.mundo.Mapa; // Aporta el límite de la ciudad a la cámara aérea.
 import com.graphics.ciudad.trafico.Trafico; // Vehículos autónomos que recorren la ciudad.
 import com.graphics.ciudad.vehiculo.Auto; // Vehículo del jugador.
@@ -29,8 +32,8 @@ import static org.lwjgl.opengl.GL33.*; // Importa las funciones OpenGL hasta la 
  * Coordenadas: X = izquierda/derecha; Y = altura; Z = profundidad.
  * Responsable de: crear los módulos, repartir las teclas, actualizar Auto y Entregas en orden, componer el título,
  * decidir el orden de dibujo de la escena y liberar los recursos al salir.
- * Se comunica con: Ventana, Shader, Cubo y Camara (motor); Ciudad y Decoracion (mundo); Auto (vehiculo);
- * Trafico; Iluminacion; Entregas, Minimapa y EstadoPartida (juego); Hud y Dibujo2D (interfaz). Main lo crea y llama a ejecutar().
+ * Se comunica con: Ventana, Shader, Cubo y Camara (motor); Ciudad, Decoracion y Entorno (mundo); Auto (vehiculo);
+ * Trafico; Iluminacion, Cielo y Sombras; Entregas, Minimapa y EstadoPartida (juego); Hud y Dibujo2D (interfaz). Main lo crea y llama a ejecutar().
  * Antes cada etapa ampliaba a la anterior con extends y super; ahora Juego llama a cada módulo en el mismo orden.
  * Los comentarios explican las instrucciones; las llaves solo delimitan bloques.
  */
@@ -50,8 +53,11 @@ public class Juego {
     private final Ciudad ciudad = new Ciudad(cubo, figuras); // Ciudad generada a partir del Mapa.
     private final Cabina cabina = new Cabina(shader, cubo); // Cabina de los autos: perfil extruido con vidrios.
     private final Decoracion decoracion = new Decoracion(shader, cubo, figuras); // Detalles urbanos de la ciudad terminada.
+    private final Entorno entorno = new Entorno(cubo, figuras); // Campo que rodea la ciudad; no cambia límites ni colisiones.
+    private final Cielo cielo = new Cielo(shader, cubo, figuras); // Fondo de la vista principal.
+    private final Sombras sombras = new Sombras(shader, cubo); // Sombras falsas de edificios, autos, árboles y bancos.
     private final Auto auto = new Auto(); // Vehículo del jugador; no necesita OpenGL para existir.
-    private final Iluminacion iluminacion = new Iluminacion(shader, cubo); // Día/noche, farolas y faros.
+    private final Iluminacion iluminacion = new Iluminacion(shader, figuras); // Día/noche, farolas y faros.
     private final Entregas entregas = new Entregas(shader, cubo); // Destinos, progreso y cronómetro.
     private final Minimapa minimapa = new Minimapa(shader, cubo); // Vista superior en un recuadro.
     private final IndicadorJugador indicador = new IndicadorJugador(shader, cubo); // Señala el auto desde la vista aérea.
@@ -195,16 +201,19 @@ public class Juego {
         int ancho = ventana.ancho(); // Ancho actual del framebuffer en píxeles.
         int alto = ventana.alto(); // Alto actual del framebuffer en píxeles.
         glViewport(0, 0, ancho, alto); // Utiliza toda el área de la ventana para la escena principal.
-        glClearColor(0.12f, 0.20f, 0.30f, 1); // Define un fondo azul oscuro completamente opaco.
+        glClearColor(0.12f, 0.20f, 0.30f, 1); // Fondo de respaldo, azul oscuro opaco: en la vista principal lo cubre el cielo (Cielo).
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Borra la imagen y las distancias del cuadro anterior.
         shader.usar(); // Activa los shaders de esta etapa.
         shader.matriz3("uRotacion", Shader.IDENTIDAD_3X3); // Sin rotación extra: solo las ruedas la cambian (y la restauran).
-        shader.decimal("uAlfa", 1); // Opacidad completa; solo Cubo.cajaTranslucida() la baja (y la restaura). Hoy nadie la usa.
+        shader.decimal("uAlfa", 1); // Opacidad completa; solo la bajan Sombras y Cubo.cajaTranslucida() (y la restauran).
+        shader.entero("uCielo", 0); // Material normal: solo Cielo activa el degradado (y lo apaga al terminar).
+        shader.entero("uSombra", 0); // Material normal: solo Sombras activa las manchas (y las apaga al terminar).
         cubo.enlazar(); // Selecciona los atributos del cubo compartido.
         shader.entero("uMapa", 0); // Selecciona perspectiva normal, no la proyección del minimapa.
         camara.configurar(shader, auto.getX(), auto.getZ(), auto.getAngulo(), ancho, alto); // Actualiza la posición y el objetivo de la cámara.
         iluminacion.preparar(auto); // Envía la iluminación: día/noche, faros y posiciones de las farolas.
         trafico.prepararFaros(); // Envía los focos de los faros del tráfico (ninguno de día).
+        cielo.dibujar(camara.getOjo(), iluminacion.esNoche()); // PRIMERO el fondo, sin escribir profundidad: todo lo demás queda delante.
         escena(); // Dibuja la ciudad y todos los módulos sobre ella.
         if (glGetError() != GL_NO_ERROR) { // Comprueba si OpenGL reportó una operación inválida.
             throw new IllegalStateException("Error OpenGL al dibujar"); // Hace visible el problema en consola.
@@ -276,17 +285,23 @@ public class Juego {
     /** Dibuja la escena completa; Minimapa la reutiliza para su segundo pase. */
     private void escena() {
         ciudad.dibujar(); // Dibuja asfalto, calles, edificios y parques.
+        if (!minimapa.enVistaMapa()) { // El minimapa muestra solo la ciudad: su escala sigue siendo Mapa.LIMITE.
+            entorno.dibujar(); // Campo verde, cordón y árboles de afuera.
+        }
         auto.dibujar(cubo, figuras, shader, cabina, iluminacion.farosEncendidos()); // Añade el vehículo con ruedas que giran y sus luces; los faros siguen a la tecla F (en todas las cámaras y en el minimapa).
         if (camara.esAerea() && !minimapa.enVistaMapa()) { // Desde arriba el auto se ve chico: se marca con una flecha.
             indicador.dibujar(auto.getX(), auto.getZ(), relojGlobal); // En la cámara de seguimiento no hace falta.
         }
         trafico.dibujar(cabina); // Añade los vehículos autónomos (con sus luces según día/noche); también aparecen en el minimapa.
-        iluminacion.dibujarFarolas(); // Añade geometría a la ciudad y al auto: postes y bombillas.
+        iluminacion.dibujarFarolas(); // Añade las farolas: base, poste, brazo curvo, pantalla y bombilla.
         if (!minimapa.enVistaMapa()) { // Los detalles pequeños solo son necesarios en la vista principal.
             decoracion.dibujar(iluminacion.esNoche(), relojGlobal); // Añade árboles, bancos, ventanas y señalización urbana.
         }
         if (entregas.quedanEntregas()) { // Dibuja un objetivo únicamente mientras queden entregas.
             entregas.dibujarDestino(minimapa.enVistaMapa()); // Coloca la marca dorada en la parada activa.
+        }
+        if (!minimapa.enVistaMapa()) { // Desde arriba, en el minimapa, las manchas solo ensuciarían el plano.
+            sombras.dibujar(auto, trafico.getVehiculos(), iluminacion.esNoche()); // AL FINAL: la mezcla necesita el suelo ya pintado.
         }
     }
 }

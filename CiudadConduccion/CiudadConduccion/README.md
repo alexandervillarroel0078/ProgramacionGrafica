@@ -77,7 +77,7 @@ Se usa una instrucción por línea, condiciones con llaves y cálculos intermedi
 6. Explicar el cono de los faros con producto escalar y `smoothstep`.
 7. Comparar la emisión de la bombilla con la luz calculada sobre el suelo. Son fenómenos distintos.
 
-**Ejercicio:** variar el color y la atenuación de las farolas (`COLOR_FAROLA` y `FAROLA_ATENUACION_*` en `iluminacion.frag`). La iluminación es local, sin sombras ni oclusión: una luz puede atravesar un edificio. Implementar shadow maps queda como ampliación. El cielo conserva el mismo fondo para concentrar la comparación día/noche en las superficies.
+**Ejercicio:** variar el color y la atenuación de las farolas (`COLOR_FAROLA` y `FAROLA_ATENUACION_*` en `iluminacion.frag`). La iluminación es local, sin sombras reales ni oclusión: una luz puede atravesar un edificio. Las sombras falsas de `Sombras` (manchas con mezcla bajo cada objeto) y el cielo con degradado de `Cielo` son solo visuales; implementar shadow maps queda como ampliación.
 
 ### Lección 4: ciudad final y minimapa
 

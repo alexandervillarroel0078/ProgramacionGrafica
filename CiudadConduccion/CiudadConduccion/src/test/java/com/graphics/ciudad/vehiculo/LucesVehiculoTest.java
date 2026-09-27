@@ -1,7 +1,7 @@
 package com.graphics.ciudad.vehiculo; // Prueba las luces de vehículo desde su mismo paquete.
 
 import com.graphics.ciudad.iluminacion.Iluminacion; // Dueña del estado de la tecla F.
-import com.graphics.ciudad.motor.Cubo; // Se crea sin tocar la GPU.
+import com.graphics.ciudad.motor.Figuras; // Mallas generadas en memoria, sin tocar la GPU.
 import com.graphics.ciudad.motor.Shader; // Se crea sin tocar la GPU.
 import java.util.Arrays; // Compara colores.
 import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usadas por Maven.
@@ -14,7 +14,7 @@ public class LucesVehiculoTest extends TestCase {
     /** Con F encendido los faros son emisivos (blanco cálido); con F apagado, gris oscuro sin emisión. */
     public void testFarosSiguenLaTeclaF() {
         Shader shader = new Shader(); // Programa sin compilar.
-        Iluminacion iluminacion = new Iluminacion(shader, new Cubo(shader)); // Estado real de la tecla F.
+        Iluminacion iluminacion = new Iluminacion(shader, new Figuras(shader)); // Estado real de la tecla F.
         assertTrue(iluminacion.farosEncendidos()); // El juego arranca con los faros encendidos.
         float[] encendido = LucesVehiculo.colorFaro(iluminacion.farosEncendidos()); // Color con F encendido.
         assertEquals(1f, encendido[3], 0f); // Emisivo.

@@ -2,6 +2,7 @@ package com.graphics.ciudad.trafico; // Prueba las luces del tráfico desde su m
 
 import com.graphics.ciudad.iluminacion.Iluminacion; // Dueña del estado día/noche (tecla N) y de los faros del jugador (F).
 import com.graphics.ciudad.motor.Cubo; // Se crea sin tocar la GPU: solo guarda referencias.
+import com.graphics.ciudad.motor.Figuras; // Mallas generadas en memoria, sin tocar la GPU.
 import com.graphics.ciudad.motor.Shader; // Se crea sin tocar la GPU: OpenGL se usa recién en crear().
 import com.graphics.ciudad.vehiculo.LucesVehiculo; // Ubicación de las luces, compartida con el jugador.
 import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usadas por Maven.
@@ -19,7 +20,7 @@ public class LucesTraficoTest extends TestCase {
     protected void setUp() {
         Shader shader = new Shader(); // Programa sin compilar: la prueba no dibuja.
         Cubo cubo = new Cubo(shader); // Geometría sin subir a la GPU.
-        iluminacion = new Iluminacion(shader, cubo); // Empieza de día (NOCHE_AL_INICIAR) y con los faros del jugador encendidos.
+        iluminacion = new Iluminacion(shader, new Figuras(shader)); // Empieza de día (NOCHE_AL_INICIAR) y con los faros del jugador encendidos.
         if (!iluminacion.esNoche()) { // Las pruebas parten de noche, que es cuando el tráfico enciende sus luces.
             iluminacion.tecla(GLFW_KEY_N); // Igual que presionar N.
         }
@@ -39,7 +40,7 @@ public class LucesTraficoTest extends TestCase {
     /** El juego arranca de día, como conviene para la demo, y con el tráfico con las luces apagadas. */
     public void testArrancaDeDia() {
         Shader shader = new Shader(); // Programa sin compilar.
-        Iluminacion recienCreada = new Iluminacion(shader, new Cubo(shader)); // Estado inicial real del juego.
+        Iluminacion recienCreada = new Iluminacion(shader, new Figuras(shader)); // Estado inicial real del juego.
         assertEquals(Iluminacion.NOCHE_AL_INICIAR, recienCreada.esNoche()); // Respeta la constante.
         assertFalse(recienCreada.esNoche()); // La demo empieza de día.
         Trafico traficoDeDia = new Trafico(shader, new Cubo(shader), recienCreada::esNoche); // Tráfico conectado a esa iluminación.

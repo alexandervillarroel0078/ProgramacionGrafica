@@ -71,6 +71,7 @@ public class Camara {
     private final float distanciaAereaInicial; // D de la vista inicial.
     private float centroX = 0; // Punto de la ciudad que mira la cámara aérea, en X.
     private float centroZ = 0; // Y en Z.
+    private final float[] ojo = new float[3]; // Última posición de la cámara enviada al shader: Cielo centra su cúpula ahí.
 
     /** Recibe la distancia del centro a cada borde (Mapa.LIMITE) y ajusta la vista aérea a ese tamaño. */
     public Camara(float limiteCiudad) {
@@ -240,8 +241,14 @@ public class Camara {
         enviar(shader, new float[] {camaraX, ALTURA_SEGUIMIENTO, camaraZ}, autoX, ALTURA_OBJETIVO, autoZ, ancho, alto); // A 9 de altura, mirando la carrocería.
     }
 
+    /** Posición de la cámara calculada en el último configurar() (copia); Cielo centra la cúpula en ella. */
+    public float[] getOjo() {
+        return ojo.clone(); // Copia: nadie puede mover la cámara desde afuera.
+    }
+
     /** Envía al shader la posición de la cámara (ojo), el punto que mira y la proporción de la ventana. */
-    private static void enviar(Shader shader, float[] ojo, float objetivoX, float objetivoY, float objetivoZ, int ancho, int alto) {
+    private void enviar(Shader shader, float[] ojoNuevo, float objetivoX, float objetivoY, float objetivoZ, int ancho, int alto) {
+        System.arraycopy(ojoNuevo, 0, ojo, 0, 3); // Recuerda el ojo para getOjo().
         shader.vector("uOjo", ojo[0], ojo[1], ojo[2]); // Posición de la cámara.
         shader.vector("uObjetivo", objetivoX, objetivoY, objetivoZ); // Punto al que mira.
         shader.decimal("uAspecto", (float) ancho / alto); // Mantiene las proporciones al redimensionar la ventana.

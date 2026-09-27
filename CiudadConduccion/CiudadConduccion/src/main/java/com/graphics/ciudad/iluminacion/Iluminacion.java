@@ -1,28 +1,37 @@
 package com.graphics.ciudad.iluminacion; // Agrupa el estado de las luces de la escena.
 
-import com.graphics.ciudad.motor.Cubo; // Dibuja postes y bombillas.
+import com.graphics.ciudad.motor.Figuras; // Cilindro, esfera y cono (los mismos de los árboles) para las farolas.
+import com.graphics.ciudad.motor.Malla; // Figura con la que se dibuja cada pieza de la farola.
 import com.graphics.ciudad.motor.Shader; // Recibe los uniforms de iluminación.
 import com.graphics.ciudad.mundo.Mapa; // Convierte celdas de manzana en coordenadas y da la dirección de cada lado.
 import com.graphics.ciudad.vehiculo.Auto; // Aporta la posición y el frente para los faros.
+import java.util.ArrayList; // Lista de piezas de cada farola.
+import java.util.List; // Tipo de esa lista.
 import static org.lwjgl.glfw.GLFW.*; // Incluye las constantes de las teclas N y F.
 
 /**
  * ILUMINACION: sol, farolas y focos del vehículo.
  * Responsable de: el estado día/noche (N) y faros (F), las ubicaciones LUCES de las trece farolas, el envío de
- * esos datos al shader iluminacion.frag, el dibujo de postes y bombillas y el texto de estado para el título.
- * Se comunica con: Shader (uniforms uNoche, uFaros, uEmision, uLuces, uAuto, uFrente), Cubo (farolas), Auto
+ * esos datos al shader iluminacion.frag, el modelo y el dibujo de las farolas y el texto de estado para el título.
+ * Se comunica con: Shader (uniforms uNoche, uFaros, uEmision, uLuces, uAuto, uFrente, uRotacion), Figuras (farolas), Auto
  * (posición y frente de los faros) y Juego (teclas, título y orden de dibujo). Decoracion usa esNoche().
- * El shader calcula iluminación local: este ejemplo todavía no proyecta sombras.
+ * El shader calcula iluminación local, sin sombras reales; Sombras agrega manchas oscuras (sombras falsas) bajo los objetos.
  *
  * FAROLAS EN LA VEREDA: el poste se planta sobre la acera de una manzana (edificio o parque), junto al cordón del lado
- * que da a la calle, y un brazo horizontal lleva la bombilla BRAZO_FAROLA unidades hacia la calle, como en las calles
+ * que da a la calle, y un brazo curvo lleva la bombilla BRAZO_FAROLA unidades hacia la calle, como en las calles
  * reales: la luz cae sobre la calzada, pero nada de la farola se apoya en ella ni participa en colisiones.
+ *
+ * MODELO DE LA FAROLA (sección 4), de abajo hacia arriba, solo con las figuras de los árboles:
+ *   base (cilindro corto y ancho) → poste (dos cilindros, el de arriba más delgado) → brazo curvo (tres cilindros
+ *   inclinados con uRotacion, unidos por esferas chicas en los codos) → pantalla (cono oscuro) → bombilla (esfera).
+ * La bombilla se dibuja EXACTAMENTE en BOMBILLAS[i], el mismo punto que recibe el shader como luz: si se mueve la
+ * farola cambian las dos cosas juntas. De día la bombilla es gris claro; de noche es emisiva (blanco cálido).
  */
 public class Iluminacion {
 
     // ==================== 1. ESTADO Y POSICIONES DE LAS LUCES ====================
     private final Shader shader; // Programa que recibe los datos de iluminación.
-    private final Cubo cubo; // Geometría con la que se dibujan las farolas.
+    private final Figuras figuras; // Cilindro, esfera y cono con los que se dibujan las farolas.
     public static final boolean NOCHE_AL_INICIAR = false; // La demo arranca de día (se ve todo); N cambia a noche.
     private boolean noche = NOCHE_AL_INICIAR; // Inicia la escena de día; la tecla N alterna la iluminación nocturna.
     private boolean faros = true; // Inicia los focos del auto encendidos.
@@ -37,6 +46,29 @@ public class Iluminacion {
     public static final float BRAZO_FAROLA = 1.5f; // Largo del brazo horizontal: la bombilla sobresale 1.1 sobre el borde de la calzada.
     public static final float ALTURA_BOMBILLA = 4.5f; // Altura de la bombilla sobre el suelo; el brazo pasa justo por encima.
     public static final float ALTURA_ACERA = 0.3f; // El poste nace sobre la acera, que Ciudad dibuja con 0.3 de alto.
+
+    // ---- Piezas del modelo (valores ajustables, en unidades del mundo) ----
+    public static final float ANCHO_BASE = 0.42f; // Diámetro de la base: más ancha que el poste, como un zócalo.
+    public static final float ALTO_BASE = 0.45f; // Alto de la base sobre la acera.
+    public static final float ANCHO_POSTE_ABAJO = 0.2f; // Diámetro del tramo inferior del poste.
+    public static final float ANCHO_POSTE_ARRIBA = 0.14f; // Diámetro del tramo superior: el poste se afina hacia arriba.
+    public static final float GROSOR_BRAZO = 0.09f; // Diámetro de los tramos del brazo.
+    public static final float ANCHO_PANTALLA = 0.8f; // Diámetro de la boca de la pantalla (base del cono).
+    public static final float ALTO_PANTALLA = 0.3f; // Alto del cono de la pantalla.
+    public static final float SEPARACION_PANTALLA = 0.05f; // La boca de la pantalla queda esto por encima del centro de la bombilla.
+    public static final float DIAMETRO_BOMBILLA = 0.32f; // Esfera de la bombilla: asoma por debajo de la pantalla.
+    /** Altura del tramo final del brazo: la punta del cono de la pantalla, que cuelga de él (4.85). */
+    public static final float ALTURA_BRAZO = ALTURA_BOMBILLA + SEPARACION_PANTALLA + ALTO_PANTALLA;
+    // PERFIL DEL BRAZO: puntos {avance, altura} vistos de costado. avance es la fracción de BRAZO_FAROLA recorrida desde
+    // el poste hacia la calle (0 = poste, 1 = sobre la bombilla) y altura se mide desde ALTURA_BRAZO (negativa = más
+    // abajo). El primer punto es la punta del poste; cada par de puntos seguidos es un tramo recto: uno empinado, uno
+    // suave y uno horizontal, que juntos parecen una curva.
+    public static final float[][] PERFIL_BRAZO = {{0, -0.7f}, {0.15f, -0.2f}, {0.5f, 0}, {1, 0}};
+    public static final float[] COLOR_BASE = {0.18f, 0.19f, 0.21f}; // Gris oscuro.
+    public static final float[] COLOR_POSTE = {0.46f, 0.49f, 0.53f}; // Gris metálico (poste, brazo y codos).
+    public static final float[] COLOR_PANTALLA = {0.14f, 0.15f, 0.17f}; // Casi negro: tapa la bombilla por arriba.
+    public static final float[] COLOR_BOMBILLA_DIA = {0.82f, 0.82f, 0.80f}; // Gris claro, apagada y sin emisión.
+    public static final float[] COLOR_BOMBILLA_NOCHE = {1.0f, 0.92f, 0.72f}; // Blanco cálido, emisiva.
 
     // FORMATO DE LUCES: cada farola es {fila, columna, lado}. (fila, columna) es una celda de MANZANA (edificio o parque)
     // y lado indica qué borde de esa manzana da a la calle donde va la farola: NORTE, SUR, OESTE o ESTE. El poste se
@@ -90,10 +122,15 @@ public class Iluminacion {
         return bombillas; // Posiciones de las bombillas.
     }
 
-    /** Recibe el shader y el cubo compartidos. */
-    public Iluminacion(Shader shader, Cubo cubo) {
+    /** Altura de la punta del poste, que es el primer punto del brazo (4.15). */
+    public static float alturaTopePoste() {
+        return ALTURA_BRAZO + PERFIL_BRAZO[0][1]; // Primer punto del perfil.
+    }
+
+    /** Recibe el shader y las figuras compartidas. */
+    public Iluminacion(Shader shader, Figuras figuras) {
         this.shader = shader; // Guarda el programa que recibirá los uniforms.
-        this.cubo = cubo; // Guarda la geometría de las farolas.
+        this.figuras = figuras; // Guarda la geometría de las farolas.
     }
 
     // ==================== 2. CONTROLES E INDICADORES ====================
@@ -162,27 +199,119 @@ public class Iluminacion {
 
     // ==================== 4. MODELOS DE LAS FAROLAS ====================
 
-    /** Dibuja poste, brazo y bombilla; la bombilla está en la misma posición usada para calcular la luz. */
-    public void dibujarFarolas() {
-        float alturaBrazo = ALTURA_BOMBILLA + 0.2f; // El brazo pasa apenas por encima de la bombilla, que cuelga de él.
-        float altoPoste = alturaBrazo + 0.06f - ALTURA_ACERA; // Del piso de la acera hasta el brazo.
-        for (int i = 0; i < LUCES.length; i++) { // Selecciona una farola a la vez.
-            float x = POSTES[i][0]; // Lee la posición horizontal del poste.
-            float y = BOMBILLAS[i][1]; // Lee la altura de la bombilla.
-            float z = POSTES[i][1]; // Lee la posición del poste en profundidad.
-            float bombillaX = BOMBILLAS[i][0]; // Punta del brazo en X.
-            float bombillaZ = BOMBILLAS[i][2]; // Punta del brazo en Z.
-            cubo.caja(x, ALTURA_ACERA + altoPoste / 2, z, 0.18f, altoPoste, 0.18f, 0.20f, 0.24f, 0.28f); // Dibuja el poste delgado y oscuro sobre la acera.
-            float centroBrazoX = (x + bombillaX) / 2; // El brazo va del poste a la bombilla: su centro está a mitad de camino.
-            float centroBrazoZ = (z + bombillaZ) / 2; // Igual en Z.
-            float largoX = Math.abs(bombillaX - x) + 0.12f; // Largo del brazo en X (0.12 de grosor si va en Z).
-            float largoZ = Math.abs(bombillaZ - z) + 0.12f; // Largo del brazo en Z (0.12 de grosor si va en X).
-            cubo.caja(centroBrazoX, alturaBrazo, centroBrazoZ, largoX, 0.12f, largoZ, 0.20f, 0.24f, 0.28f); // Brazo horizontal hacia la calle.
-            if (noche) { // Las bombillas aparentan estar encendidas únicamente de noche.
-                shader.entero("uEmision", 1); // Evita que la bombilla sea oscurecida por la iluminación.
-            }
-            cubo.caja(bombillaX, y, bombillaZ, 0.7f, 0.35f, 0.7f, 1, 0.83f, 0.42f); // Dibuja la bombilla de color cálido en la punta del brazo.
-            shader.entero("uEmision", 0); // Restablece el material normal para el siguiente objeto.
+    /** Qué parte de la farola es una pieza; FarolasTest busca la BOMBILLA para compararla con la luz. */
+    public enum Parte { BASE, POSTE, CODO, BRAZO, PANTALLA, BOMBILLA }
+
+    /** Figura con la que se dibuja una pieza: las tres mallas redondeadas de Figuras. */
+    public enum Forma { CILINDRO, ESFERA, CONO }
+
+    /**
+     * PIEZA: una figura ya ubicada en el mundo. (x, y, z) es su centro, (sx, sy, sz) su tamaño antes de rotar y
+     * rotacion la matriz uRotacion (nueve números, columna por columna). El modelo se arma sin OpenGL, así una prueba
+     * puede revisarlo; dibujarFarolas() solo recorre la lista y la envía a la GPU.
+     */
+    public static final class Pieza {
+        public final Parte parte; // Base, poste, codo, brazo, pantalla o bombilla.
+        public final Forma forma; // Cilindro, esfera o cono.
+        public final float x, y, z; // Centro en el mundo.
+        public final float sx, sy, sz; // Tamaño en cada eje; en los tramos del brazo, sy es el largo.
+        public final float[] color; // RGB entre 0 y 1.
+        public final float[] rotacion; // Matriz 3 × 3 por columnas para uRotacion.
+        public final boolean emisiva; // true = conserva su color sin iluminación (la bombilla de noche).
+
+        Pieza(Parte parte, Forma forma, float x, float y, float z, float sx, float sy, float sz,
+              float[] color, float[] rotacion, boolean emisiva) {
+            this.parte = parte; // Parte de la farola.
+            this.forma = forma; // Figura a usar.
+            this.x = x; // Centro X.
+            this.y = y; // Centro Y.
+            this.z = z; // Centro Z.
+            this.sx = sx; // Ancho.
+            this.sy = sy; // Alto.
+            this.sz = sz; // Profundidad.
+            this.color = color; // Color del material.
+            this.rotacion = rotacion; // Orientación.
+            this.emisiva = emisiva; // Brillo propio.
         }
+    }
+
+    /** Arma las piezas de la farola i, de abajo hacia arriba, en coordenadas del mundo. */
+    public static List<Pieza> modeloFarola(int i, boolean noche) {
+        List<Pieza> piezas = new ArrayList<>(); // Resultado.
+        float[] vertical = Shader.IDENTIDAD_3X3; // Piezas verticales: sin rotación extra.
+        float x = POSTES[i][0]; // Centro del poste en X.
+        float z = POSTES[i][1]; // Centro del poste en Z.
+        int[] haciaCalle = Mapa.VECINOS[LUCES[i][2]]; // {dFila, dColumna} del lado de la calle.
+        float dx = haciaCalle[1]; // Dirección hacia la calle en X (las columnas son X).
+        float dz = haciaCalle[0]; // Dirección hacia la calle en Z (las filas son Z).
+
+        // Base: cilindro corto y ancho apoyado en la acera.
+        piezas.add(new Pieza(Parte.BASE, Forma.CILINDRO, x, ALTURA_ACERA + ALTO_BASE / 2, z,
+            ANCHO_BASE, ALTO_BASE, ANCHO_BASE, COLOR_BASE, vertical, false));
+        // Poste: dos tramos de igual alto; el de arriba más delgado, así se afina hacia la punta.
+        float pie = ALTURA_ACERA + ALTO_BASE; // Donde termina la base.
+        float tramo = (alturaTopePoste() - pie) / 2; // Alto de cada tramo.
+        piezas.add(new Pieza(Parte.POSTE, Forma.CILINDRO, x, pie + tramo / 2, z,
+            ANCHO_POSTE_ABAJO, tramo, ANCHO_POSTE_ABAJO, COLOR_POSTE, vertical, false));
+        piezas.add(new Pieza(Parte.POSTE, Forma.CILINDRO, x, pie + tramo * 1.5f, z,
+            ANCHO_POSTE_ARRIBA, tramo, ANCHO_POSTE_ARRIBA, COLOR_POSTE, vertical, false));
+
+        // Brazo: un cilindro entre cada par de puntos del perfil y una esfera en cada codo, que tapa la unión.
+        for (int k = 0; k < PERFIL_BRAZO.length - 1; k++) { // Recorre los tramos (el último punto no abre ninguno).
+            float ax = x + dx * PERFIL_BRAZO[k][0] * BRAZO_FAROLA; // Inicio del tramo, X.
+            float ay = ALTURA_BRAZO + PERFIL_BRAZO[k][1]; // Inicio del tramo, altura.
+            float az = z + dz * PERFIL_BRAZO[k][0] * BRAZO_FAROLA; // Inicio del tramo, Z.
+            float bx = x + dx * PERFIL_BRAZO[k + 1][0] * BRAZO_FAROLA; // Fin del tramo, X.
+            float by = ALTURA_BRAZO + PERFIL_BRAZO[k + 1][1]; // Fin del tramo, altura.
+            float bz = z + dz * PERFIL_BRAZO[k + 1][0] * BRAZO_FAROLA; // Fin del tramo, Z.
+            float codo = k == 0 ? ANCHO_POSTE_ARRIBA : GROSOR_BRAZO; // El primer codo también redondea la punta del poste.
+            piezas.add(new Pieza(Parte.CODO, Forma.ESFERA, ax, ay, az, codo, codo, codo, COLOR_POSTE, vertical, false));
+            float largo = (float) Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay) + (bz - az) * (bz - az)); // Largo del tramo.
+            float[] giro = rotacionTramo(dx, dz, (bx - ax) / largo, (by - ay) / largo, (bz - az) / largo); // Acuesta el cilindro sobre el tramo.
+            piezas.add(new Pieza(Parte.BRAZO, Forma.CILINDRO, (ax + bx) / 2, (ay + by) / 2, (az + bz) / 2,
+                GROSOR_BRAZO, largo, GROSOR_BRAZO, COLOR_POSTE, giro, false));
+        }
+
+        // Luminaria: pantalla (cono con la boca hacia abajo) colgada del brazo y bombilla (esfera) asomando debajo.
+        float[] luz = BOMBILLAS[i]; // El MISMO punto que preparar() envía como uLuces[i]: no se duplican coordenadas.
+        piezas.add(new Pieza(Parte.PANTALLA, Forma.CONO, luz[0], luz[1] + SEPARACION_PANTALLA + ALTO_PANTALLA / 2, luz[2],
+            ANCHO_PANTALLA, ALTO_PANTALLA, ANCHO_PANTALLA, COLOR_PANTALLA, vertical, false));
+        float[] colorBombilla = noche ? COLOR_BOMBILLA_NOCHE : COLOR_BOMBILLA_DIA; // Encendida solo de noche.
+        piezas.add(new Pieza(Parte.BOMBILLA, Forma.ESFERA, luz[0], luz[1], luz[2],
+            DIAMETRO_BOMBILLA, DIAMETRO_BOMBILLA, DIAMETRO_BOMBILLA, colorBombilla, vertical, noche));
+        return piezas; // Farola completa.
+    }
+
+    /**
+     * Matriz que acuesta el cilindro (su eje es Y) sobre la dirección unitaria (ex, ey, ez) de un tramo del brazo.
+     * Sus columnas dicen adónde va cada eje local: X = lateral horizontal (-dz, 0, dx), perpendicular a la calle;
+     * Y = el tramo; Z = lateral × tramo (producto vectorial). Con Z calculada así es una rotación pura, sin espejar.
+     */
+    static float[] rotacionTramo(float dx, float dz, float ex, float ey, float ez) {
+        float lx = -dz; // Eje lateral en X (su componente Y es 0).
+        float lz = dx; // Eje lateral en Z.
+        float nx = -lz * ey; // Producto vectorial (lx, 0, lz) × (ex, ey, ez), componente X.
+        float ny = lz * ex - lx * ez; // Componente Y.
+        float nz = lx * ey; // Componente Z.
+        return new float[] {lx, 0, lz, ex, ey, ez, nx, ny, nz}; // Tres columnas.
+    }
+
+    /** Dibuja cada farola pieza por pieza; la bombilla está en la misma posición usada para calcular la luz. */
+    public void dibujarFarolas() {
+        for (int i = 0; i < LUCES.length; i++) { // Selecciona una farola a la vez.
+            for (Pieza p : modeloFarola(i, noche)) { // Recorre sus piezas.
+                Malla malla = figuras.cilindro; // Figura de la pieza: cilindro por defecto...
+                if (p.forma == Forma.ESFERA) {
+                    malla = figuras.esfera; // ...esfera para codos y bombilla...
+                } else if (p.forma == Forma.CONO) {
+                    malla = figuras.cono; // ...cono para la pantalla.
+                }
+                shader.matriz3("uRotacion", p.rotacion); // Inclina los tramos del brazo; identidad para lo demás.
+                shader.entero("uEmision", p.emisiva ? 1 : 0); // Solo la bombilla de noche ignora la iluminación.
+                malla.dibujar(p.x, p.y, p.z, p.sx, p.sy, p.sz, p.color[0], p.color[1], p.color[2]); // Envía la pieza.
+            }
+        }
+        shader.matriz3("uRotacion", Shader.IDENTIDAD_3X3); // Restablece la rotación para el siguiente objeto.
+        shader.entero("uEmision", 0); // Restablece el material normal para el siguiente objeto.
     }
 }

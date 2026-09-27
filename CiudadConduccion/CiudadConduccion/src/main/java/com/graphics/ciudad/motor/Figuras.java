@@ -5,7 +5,8 @@ package com.graphics.ciudad.motor; // Agrupa las piezas técnicas: ventana, shad
  * triangular (el techo a dos aguas de las casas bajas).
  * Responsable de: generarlas con la resolución elegida, subirlas a la GPU (crear) y liberarlas (eliminar).
  * Se comunica con: Malla (generadores y dibujo), Juego (llama a crear() y eliminar(), igual que con Cubo) y
- * Parque (árboles, fuente y senderos las usan) y Edificio (antena, tanque de agua y techo a dos aguas).
+ * Parque (árboles, fuente y senderos las usan), Edificio (antena, tanque de agua y techo a dos aguas) e Iluminacion
+ * (base, poste, brazo, pantalla y bombilla de las farolas).
  */
 public class Figuras {
 

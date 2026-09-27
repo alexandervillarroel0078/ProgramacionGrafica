@@ -16,6 +16,7 @@ uniform int uMapa; // Selecciona perspectiva (0) o vista superior ortográfica (
 uniform float uMitadMapa; // Media anchura visible del minimapa: Mapa.LIMITE más un margen (antes fijo en 37).
 out vec3 vMundo; // Envía la posición mundial al shader de fragmentos.
 out vec3 vNormal; // Envía la normal transformada para la iluminación de iluminacion.frag.
+out vec3 vLocal; // Posición del vértice dentro de la figura unitaria (-0.5 a 0.5): la usa la sombra falsa para su degradado.
 
 // ==================== CONSTANTES DE PROYECCIÓN (valores ajustables) ====================
 const float CAMPO_VISUAL = 55.0; // Campo visual vertical de la cámara, en grados: más grande = más gran angular.
@@ -35,6 +36,7 @@ void main() { // OpenGL ejecuta este bloque una vez por vértice.
     vMundo = giro * (uRotacion * (aPos * uEscala)) + uPos; // Escala, gira y traslada el vértice al mundo.
     // Las rotaciones son ortonormales (su inversa transpuesta es ella misma): solo la escala necesita invertirse.
     vNormal = normalize(giro * (uRotacion * (aNormal / uEscala))); // Corrige la normal con la inversa transpuesta de escala y giro.
+    vLocal = aPos; // Sin escala ni giro: el centro de la figura es (0, 0, 0) y sus bordes están a ±0.5.
 
     if (uMapa == 1) { // Esta rama se usa al dibujar el minimapa en Minimapa.
         float pantallaX = vMundo.x / uMitadMapa; // Ajusta el ancho del mundo al intervalo visible -1 a 1.

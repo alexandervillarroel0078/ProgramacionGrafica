@@ -19,7 +19,8 @@ import java.util.List; // Tipo de esas listas.
  * Todo queda dentro de la celda del parque: nada invade la calle ni participa en colisiones (Colisiones ya bloquea la
  * manzana entera). Los árboles evitan los postes de semáforos, PARE y farolas que están en la acera del parque.
  * Se comunica con: Decoracion (lo llama para cada celda de parque), Figuras y Cubo (dibujo), Shader (emisión),
- * Mapa (centro de la celda), Senalizacion e Iluminacion (postes que hay que esquivar).
+ * Mapa (centro de la celda), Senalizacion e Iluminacion (postes que hay que esquivar). Entorno reutiliza dibujarArbol()
+ * para los árboles del campo, y Sombras lee arboles() y bancos() para ubicar sus manchas.
  */
 public class Parque {
 
@@ -163,11 +164,7 @@ public class Parque {
         dibujarSenderos(x, z); // Cruz de caminos.
         dibujarFuente(x, z, noche); // Fuente en el centro.
         for (float[] arbol : arbolesPorParque.get(indice)) { // Árboles propios del parque.
-            if (arbol[2] == PINO) { // Según el tipo sorteado.
-                dibujarPino(arbol); // Tronco y conos.
-            } else { // Árbol frondoso.
-                dibujarFrondoso(arbol); // Tronco y esferas.
-            }
+            dibujarArbol(figuras, arbol, TOPE_CESPED); // Pino o frondoso, apoyado sobre el césped.
         }
         for (float[] banco : bancosPorParque.get(indice)) { // Bancos propios del parque.
             dibujarBanco(banco[0], banco[1], banco[2]); // Mirando a la fuente.
@@ -213,18 +210,30 @@ public class Parque {
         shader.entero("uEmision", 0); // Restablece el material normal para el siguiente objeto.
     }
 
+    /**
+     * Dibuja un árbol {x, z, tipo, alturaTronco, diametroCopa, verde, giro} apoyado a la altura base: pino o frondoso
+     * según su tipo. Es estático para que Entorno reutilice los mismos árboles en el campo que rodea la ciudad.
+     */
+    public static void dibujarArbol(Figuras figuras, float[] arbol, float base) {
+        if (arbol[2] == PINO) { // Según el tipo sorteado.
+            dibujarPino(figuras, arbol, base); // Tronco y conos.
+        } else { // Árbol frondoso.
+            dibujarFrondoso(figuras, arbol, base); // Tronco y esferas.
+        }
+    }
+
     /** Árbol frondoso: tronco cilíndrico fino y copa de tres esferas de distinto tamaño, desplazadas entre sí. */
-    private void dibujarFrondoso(float[] a) {
+    private static void dibujarFrondoso(Figuras figuras, float[] a, float base) {
         float x = a[0]; // Posición del tronco en X.
         float z = a[1]; // Posición del tronco en Z.
         float altoTronco = a[3]; // Alto del tronco.
         float copa = a[4]; // Diámetro de la esfera principal.
         float giro = a[6]; // Orientación de la copa.
-        figuras.cilindro.dibujar(x, TOPE_CESPED + altoTronco / 2, z, 0.28f, altoTronco, 0.28f, 0.38f, 0.22f, 0.12f); // Dibuja el tronco marrón.
+        figuras.cilindro.dibujar(x, base + altoTronco / 2, z, 0.28f, altoTronco, 0.28f, 0.38f, 0.22f, 0.12f); // Dibuja el tronco marrón.
         float r = 0.10f + 0.08f * a[5]; // Tono de verde: un poco de rojo...
         float g = 0.50f - 0.15f * a[5]; // ...más o menos verde según el árbol...
         float b = 0.16f + 0.06f * a[5]; // ...y algo de azul.
-        float centroCopa = TOPE_CESPED + altoTronco + copa * 0.35f; // La copa abraza el extremo del tronco.
+        float centroCopa = base + altoTronco + copa * 0.35f; // La copa abraza el extremo del tronco.
         figuras.esfera.dibujar(x, centroCopa, z, copa, copa * 0.9f, copa, r, g, b); // Esfera principal, un poco achatada.
         float dx = (float) Math.cos(giro) * 0.35f; // Desplazamiento de las esferas menores, girado por árbol.
         float dz = (float) Math.sin(giro) * 0.35f; // Igual en Z.
@@ -233,21 +242,21 @@ public class Parque {
     }
 
     /** Pino: tronco cilíndrico y tres conos apilados que se achican hacia arriba. */
-    private void dibujarPino(float[] a) {
+    private static void dibujarPino(Figuras figuras, float[] a, float base) {
         float x = a[0]; // Posición del tronco en X.
         float z = a[1]; // Posición del tronco en Z.
         float altoTronco = a[3]; // Alto del tronco.
-        float base = a[4]; // Diámetro del cono inferior.
-        figuras.cilindro.dibujar(x, TOPE_CESPED + altoTronco / 2, z, 0.3f, altoTronco, 0.3f, 0.36f, 0.22f, 0.13f); // Tronco.
+        float anchoCono = a[4]; // Diámetro del cono inferior.
+        figuras.cilindro.dibujar(x, base + altoTronco / 2, z, 0.3f, altoTronco, 0.3f, 0.36f, 0.22f, 0.13f); // Tronco.
         float r = 0.06f + 0.04f * a[5]; // Verde oscuro de pino...
         float g = 0.38f - 0.10f * a[5]; // ...que varía por árbol...
         float b = 0.16f + 0.03f * a[5]; // ...con un poco de azul.
         float[] escalas = {1.0f, 0.72f, 0.46f}; // Cada cono es más angosto que el de abajo.
         float[] altos = {1.3f, 1.1f, 0.9f}; // Y más bajo.
-        float y = TOPE_CESPED + altoTronco; // Donde empieza el primer cono.
+        float y = base + altoTronco; // Donde empieza el primer cono.
         for (int i = 0; i < escalas.length; i++) { // Apila los conos.
             float alto = altos[i]; // Alto de este cono.
-            figuras.cono.dibujar(x, y + alto / 2, z, base * escalas[i], alto, base * escalas[i], r, g + 0.04f * i, b); // Cono, un poco más claro arriba.
+            figuras.cono.dibujar(x, y + alto / 2, z, anchoCono * escalas[i], alto, anchoCono * escalas[i], r, g + 0.04f * i, b); // Cono, un poco más claro arriba.
             y += alto * 0.55f; // El siguiente se apoya a mitad del anterior: los conos se superponen.
         }
     }

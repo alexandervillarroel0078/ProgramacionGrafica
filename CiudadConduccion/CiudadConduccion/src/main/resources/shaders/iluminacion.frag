@@ -1,9 +1,10 @@
 #version 330 core // Selecciona la versión GLSL correspondiente a OpenGL 3.3.
 // SHADER DE FRAGMENTOS CON ILUMINACIÓN: calcula el color iluminado de cada fragmento.
 // Reemplaza al shader de color plano (plano.frag). Los uniforms de luz los envía Iluminacion.preparar().
-// El shader calcula iluminación local: este ejemplo todavía no proyecta sombras.
+// El shader calcula iluminación local, sin sombras reales: las "sombras falsas" de Sombras son manchas oscuras con mezcla (rama uSombra).
 in vec3 vMundo; // Recibe la posición del fragmento en la ciudad.
 in vec3 vNormal; // Recibe la dirección perpendicular a la superficie.
+in vec3 vLocal; // Posición dentro de la figura unitaria (-0.5 a 0.5), para el degradado de las sombras falsas.
 uniform vec3 uColor; // Recibe el color base de la caja.
 uniform vec3 uLuces[16]; // Recibe las posiciones de las farolas; 16 es el máximo (Iluminacion.MAX_LUCES).
 uniform int uNumLuces; // Recibe cuántas posiciones de uLuces están en uso (Iluminacion.LUCES.length).
@@ -13,7 +14,14 @@ uniform int uNoche; // Vale 1 de noche y 0 de día.
 uniform int uFaros; // Vale 1 cuando los focos están encendidos.
 uniform int uEmision; // Vale 1 si el objeto debe conservar su color sin oscurecerse.
 uniform int uMapa; // Vale 1 durante el dibujo del minimapa de Minimapa.
-uniform float uAlfa; // Opacidad de los objetos emisivos: 1 normalmente. Solo la baja Cubo.cajaTranslucida(), reservada para sombras falsas.
+uniform float uAlfa; // Opacidad: 1 normalmente. La bajan Sombras (centro de cada mancha) y Cubo.cajaTranslucida().
+uniform vec3 uOjo; // Posición de la cámara (la misma que recibe ciudad.vert): el cielo la usa para saber hacia dónde se mira.
+uniform int uCielo; // Vale 1 mientras Cielo dibuja la cúpula: el color sale del degradado, no de la iluminación.
+uniform vec3 uCieloCenit; // Color del cielo mirando hacia arriba (día o noche, lo elige Cielo).
+uniform vec3 uCieloHorizonte; // Color del cielo en el horizonte.
+uniform int uSombra; // Vale 1 mientras Sombras dibuja las manchas oscuras bajo los objetos.
+uniform float uFormaSombra; // Curva de la mancha: 2 = elipse, 4 = rectángulo de esquinas redondeadas.
+uniform float uNucleoSombra; // Hasta dónde la mancha es pareja (0 = centro, 1 = borde); de ahí al borde se difumina.
 out vec4 color; // Entrega el color RGBA final al framebuffer.
 
 // ==================== CONSTANTES DE ILUMINACIÓN (valores ajustables) ====================
@@ -28,6 +36,12 @@ const float FAROLA_ATENUACION_LINEAL = 0.12; // Término lineal de la atenuació
 const float FAROLA_ATENUACION_CUADRATICA = 0.045; // Término cuadrático: domina lejos y define el radio útil de la luz.
 const vec3 COLOR_FAROLA = vec3(1.0, 0.73, 0.34); // Tono cálido (sodio) de las farolas.
 const float INTENSIDAD_FAROLA = 3.0; // Multiplicador del aporte de cada farola.
+// Farolas como FOCO hacia abajo. Ángulos medidos desde la vertical que baja de la bombilla, en grados.
+// Con la bombilla a 4.5 de altura, 35° dan un círculo pleno de ≈ 3.2 de radio en el suelo (toda la vereda)
+// y 60° un borde de ≈ 7.8 (la luz se desvanece pasando el centro de la calzada).
+const vec3 DIRECCION_FAROLA = vec3(0.0, -1.0, 0.0); // Eje del foco: recto hacia el suelo, donde la pantalla deja salir la luz.
+const float ANGULO_FAROLA_INTERIOR = 35.0; // Dentro de este ángulo la luz es plena.
+const float ANGULO_FAROLA_EXTERIOR = 60.0; // Fuera de este ángulo no hay luz; entre ambos, borde suave (smoothstep).
 // Faros del auto: posición, cono y alcance.
 const float FAROS_SEPARACION = 0.55; // Distancia lateral de cada faro al centro del auto.
 const float FAROS_AVANCE = 1.36; // Distancia del centro del auto al frente, donde nacen los haces.
@@ -37,6 +51,8 @@ const float CONO_CENTRO = 0.97; // Coseno del núcleo del haz (≈ 14°): dentro
 const float FAROS_ATENUACION_CUADRATICA = 0.04; // Alcance de los faros: atenuación = 1 + 0.04 · d².
 const vec3 COLOR_FARO = vec3(1.0, 0.94, 0.72); // Luz frontal blanca y cálida.
 const float INTENSIDAD_FARO = 8.0; // Multiplicador del aporte de cada faro.
+// Cielo: cómo se reparte el degradado entre el horizonte y el cénit.
+const float CURVA_CIELO = 0.6; // Exponente: < 1 hace que el azul intenso llegue rápido y el celeste quede cerca del horizonte.
 // Faros del tráfico: mismo cono que los del jugador, pero más débiles y de menor alcance.
 const int MAX_FAROS_TRAFICO = 16; // Tamaño de los arreglos de focos de tráfico; debe coincidir con Trafico.MAX_FAROS_TRAFICO.
 const float INTENSIDAD_FARO_TRAFICO = 4.0; // Multiplicador de cada foco de tráfico: la mitad que el faro del jugador.
@@ -46,14 +62,29 @@ uniform vec3 uFarosTrafico[MAX_FAROS_TRAFICO]; // Posición de cada foco de trá
 uniform vec3 uDireccionFarosTrafico[MAX_FAROS_TRAFICO]; // Dirección de avance del vehículo dueño de cada foco.
 uniform int uNumFarosTrafico; // Cuántos focos están en uso; de día vale 0 y el bucle no calcula nada.
 
-// ==================== FUNCIÓN DE CONO (un foco con smoothstep y atenuación) ====================
-// La usan los faros del jugador y los del tráfico, así el cálculo del cono existe una sola vez.
+// ==================== LUZ PUNTUAL vs. FOCO ====================
+// Luz PUNTUAL (omnidireccional): emite igual hacia todos lados; solo importan la distancia (atenuación) y
+// cuánto mira la cara hacia la luz (difusa). Ilumina también lo que está por encima o al costado de la fuente.
+// FOCO (cono): además tiene un EJE. Se mide el ángulo entre el eje y la dirección luz → fragmento; con el producto
+// punto de dos vectores unitarios se obtiene el coseno de ese ángulo. Si el ángulo supera el borde exterior, no llega luz.
+// La farola tiene una pantalla que la tapa por arriba: una luz puntual iluminaría las paredes por encima de la pantalla,
+// algo imposible en la realidad. Por eso la farola es un foco apuntando hacia abajo, igual que los faros del auto.
+
+// ==================== FUNCIÓN DE CONO (factor 0..1 con borde suave) ====================
+// Devuelve 1 dentro del cono interior, 0 fuera del exterior y una transición suave entre ambos.
+// La usan los faros (vía aporteFoco) y las farolas, así el cálculo del cono existe una sola vez.
+float factorCono(vec3 haciaSuperficie, vec3 eje, float cosenoExterior, float cosenoInterior) {
+    float alineacion = dot(normalize(haciaSuperficie), eje); // Coseno del ángulo al eje: 1 en el centro del haz, negativo detrás del foco.
+    return smoothstep(cosenoExterior, cosenoInterior, alineacion); // Ángulo mayor = coseno menor: el exterior es el límite inferior.
+}
+
+// ==================== FOCO DE LOS FAROS (cono con smoothstep y atenuación) ====================
+// La usan los faros del jugador y los del tráfico.
 vec3 aporteFoco(vec3 origen, vec3 frente, vec3 normal, float atenuacionCuadratica, float intensidad) {
     vec3 haciaSuperficie = vMundo - origen; // Forma el vector del faro al fragmento.
     float distancia = length(haciaSuperficie); // Mide la distancia recorrida por la luz.
     vec3 eje = normalize(frente + vec3(0.0, -FAROS_INCLINACION, 0.0)); // Inclina el foco ligeramente hacia el suelo.
-    float alineacion = dot(normalize(haciaSuperficie), eje); // Un valor cercano a 1 indica el centro del haz.
-    float cono = smoothstep(CONO_BORDE, CONO_CENTRO, alineacion); // Suaviza el borde entre el exterior y el interior del foco.
+    float cono = factorCono(haciaSuperficie, eje, CONO_BORDE, CONO_CENTRO); // Suaviza el borde entre el exterior y el interior del foco.
     float difusa = max(dot(normal, -normalize(haciaSuperficie)), 0.0); // Mide cuánto mira la cara hacia el faro.
     float atenuacion = 1.0 + atenuacionCuadratica * distancia * distancia; // Disminuye la intensidad al alejarse.
     vec3 colorFaro = COLOR_FARO; // Define una luz frontal blanca y cálida.
@@ -62,6 +93,24 @@ vec3 aporteFoco(vec3 origen, vec3 frente, vec3 normal, float atenuacionCuadratic
 
 // ==================== CÁLCULO DE LUZ EN LA GPU ====================
 void main() { // Se ejecuta para cada fragmento visible de una caja.
+    if (uCielo == 1) { // Cúpula del cielo (Cielo.dibujar): degradado según hacia dónde se mira.
+        vec3 direccion = normalize(vMundo - uOjo); // Del ojo al punto de la cúpula: la dirección de la mirada.
+        float altura = clamp(direccion.y, 0.0, 1.0); // 0 en el horizonte (o debajo), 1 mirando justo hacia arriba.
+        float mezcla = pow(altura, CURVA_CIELO); // Reparte el degradado: más cielo azul, franja clara cerca del horizonte.
+        color = vec4(mix(uCieloHorizonte, uCieloCenit, mezcla), 1.0); // mix(a, b, t) = a · (1 - t) + b · t.
+        return; // El cielo no recibe luz: es el fondo.
+    }
+
+    if (uSombra == 1) { // Sombra falsa (Sombras.dibujar): mancha con bordes difusos.
+        vec2 p = abs(vLocal.xz) * 2.0; // Posición en la base de la caja: 0 en el centro, 1 en cada borde.
+        // "Distancia" generalizada: con exponente 2 es la del círculo (Pitágoras) y la mancha es una elipse;
+        // con 4 las curvas de nivel se parecen a un cuadrado de esquinas redondeadas.
+        float d = pow(pow(p.x, uFormaSombra) + pow(p.y, uFormaSombra), 1.0 / uFormaSombra);
+        float mancha = 1.0 - smoothstep(uNucleoSombra, 1.0, d); // 1 en el núcleo, baja suave y vale 0 en el borde.
+        color = vec4(uColor, uAlfa * mancha); // Alfa variable: el blending oscurece más el centro que el borde.
+        return; // La sombra no se ilumina.
+    }
+
     if (uEmision == 1 || uMapa == 1) { // Bombillas y minimapa usan colores directos.
         color = vec4(uColor, uAlfa); // Conserva el color base; uAlfa < 1 solo en cajas translúcidas (con mezcla activada).
         return; // Termina el shader sin calcular iluminación.
@@ -79,13 +128,17 @@ void main() { // Se ejecuta para cada fragmento visible de una caja.
     luz += vec3(intensidadSol) * incidenciaSol; // Suma la contribución direccional al ambiente.
 
     if (uNoche == 1) { // Calcula la iluminación de las farolas solo de noche.
+        float cosenoFarolaExterior = cos(radians(ANGULO_FAROLA_EXTERIOR)); // El cono se compara con cosenos, no con grados.
+        float cosenoFarolaInterior = cos(radians(ANGULO_FAROLA_INTERIOR));
         for (int indice = 0; indice < uNumLuces; indice++) { // Acumula el aporte de cada bombilla.
             vec3 haciaLuz = uLuces[indice] - vMundo; // Forma el vector desde la superficie hacia la farola.
             float distancia = length(haciaLuz); // Mide cuántas unidades separan superficie y bombilla.
+            // Foco hacia abajo: lo que está por encima de la bombilla queda detrás del eje (coseno negativo) y recibe 0.
+            float cono = factorCono(-haciaLuz, DIRECCION_FAROLA, cosenoFarolaExterior, cosenoFarolaInterior);
             float difusa = max(dot(normal, normalize(haciaLuz)), 0.0); // Calcula la incidencia de la luz sobre la cara.
             float atenuacion = 1.0 + FAROLA_ATENUACION_LINEAL * distancia + FAROLA_ATENUACION_CUADRATICA * distancia * distancia; // Reduce el alcance con la distancia.
             vec3 colorFarola = COLOR_FAROLA; // Define el tono cálido de la farola.
-            luz += colorFarola * difusa * INTENSIDAD_FAROLA / atenuacion; // Suma el aporte atenuado de esta bombilla.
+            luz += colorFarola * cono * difusa * INTENSIDAD_FAROLA / atenuacion; // Suma el aporte atenuado de esta bombilla, solo dentro del cono.
         }
     }
 

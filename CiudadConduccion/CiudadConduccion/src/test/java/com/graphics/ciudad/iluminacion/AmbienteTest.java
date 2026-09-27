@@ -1,0 +1,80 @@
+package com.graphics.ciudad.iluminacion; // Prueba el cielo y las sombras falsas desde su mismo paquete.
+
+import com.graphics.ciudad.mundo.Entorno; // Árboles del campo.
+import com.graphics.ciudad.mundo.Mapa; // Celdas y medidas de las manzanas.
+import com.graphics.ciudad.mundo.Parque; // Árboles, bancos y césped de los parques.
+import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usadas por Maven.
+
+/** Comprueba el cielo (cúpula, estrellas y luna) y las sombras falsas sin abrir una ventana OpenGL. */
+public class AmbienteTest extends TestCase {
+
+    /** La cúpula, las estrellas y la luna quedan dentro del plano lejano de ciudad.vert: si no, se recortarían. */
+    public void testCieloDentroDelPlanoLejano() throws Exception {
+        java.io.InputStream entrada = Cielo.class.getResourceAsStream("/shaders/ciudad.vert"); // El shader, desde el classpath.
+        assertNotNull(entrada);
+        String texto = new String(entrada.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("PLANO_LEJANO\\s*=\\s*([0-9.]+)").matcher(texto);
+        assertTrue(m.find());
+        float planoLejano = Float.parseFloat(m.group(1)); // Su valor.
+        assertTrue(Cielo.RADIO_CIELO < planoLejano); // La cúpula entera se ve.
+        assertTrue(Cielo.DISTANCIA_ESTRELLAS < Cielo.RADIO_CIELO); // Estrellas delante de la cúpula.
+        assertTrue(Cielo.DISTANCIA_LUNA + Cielo.DIAMETRO_LUNA / 2 < Cielo.DISTANCIA_ESTRELLAS); // Luna delante de las estrellas.
+    }
+
+    /** Las estrellas están sobre el horizonte, con dirección unitaria, y son siempre las mismas. */
+    public void testEstrellas() {
+        assertEquals(Cielo.CANTIDAD_ESTRELLAS, Cielo.ESTRELLAS.length);
+        for (float[] e : Cielo.ESTRELLAS) {
+            float largo = (float) Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]); // Largo de la dirección.
+            assertEquals(1f, largo, 1e-4f); // Unitaria: todas a la misma distancia del ojo.
+            assertTrue(e[1] >= Cielo.ALTURA_MIN_ESTRELLA - 1e-6f); // Ninguna bajo el horizonte.
+            assertTrue(e[3] >= Cielo.TAMANO_MIN_ESTRELLA && e[3] <= Cielo.TAMANO_MAX_ESTRELLA);
+            assertTrue(e[4] >= Cielo.BRILLO_MIN_ESTRELLA && e[4] <= 1);
+        }
+        assertTrue(Cielo.direccionLuna()[1] > 0); // La luna está en el cielo, no bajo el suelo.
+    }
+
+    /** Hay una sombra fija por edificio, árbol y banco, y ninguna sale de la superficie donde se apoya. */
+    public void testSombrasFijas() {
+        int esperadas = Entorno.ARBOLES.size(); // Árboles del campo.
+        for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
+            for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                if (Mapa.tipo(fila, columna) == Mapa.EDIFICIO) {
+                    esperadas++; // Un edificio.
+                }
+            }
+        }
+        for (int[] p : Mapa.parques()) {
+            esperadas += Parque.arboles(p[0], p[1]).size() + Parque.bancos(p[0], p[1]).size(); // Árboles y bancos.
+        }
+        assertEquals(esperadas, Sombras.FIJAS.size());
+        for (float[] s : Sombras.FIJAS) {
+            int fila = Mapa.indiceCelda(s[2]); // Celda donde cae la sombra.
+            int columna = Mapa.indiceCelda(s[0]);
+            boolean enCiudad = fila >= 0 && fila < Mapa.MAPA.length && columna >= 0 && columna < Mapa.MAPA[0].length;
+            if (!enCiudad) { // Árbol del campo: sobre el pasto.
+                assertEquals(Entorno.ALTURA_CAMPO + Sombras.ELEVACION_SOMBRA, s[1], 1e-5f);
+                continue;
+            }
+            float cx = Mapa.centro(columna); // Centro de la manzana.
+            float cz = Mapa.centro(fila);
+            assertTrue(!Mapa.esCalle(fila, columna)); // Las sombras fijas nunca caen en la calle.
+            float medio = Mapa.tipo(fila, columna) == Mapa.PARQUE ? Parque.MITAD_CESPED : Mapa.TAM_CELDA / 2; // Césped o acera.
+            float radio = Math.max(s[3], s[4]) / 2; // Mitad de la mancha (cota que vale con cualquier giro).
+            if (s[5] == 0) { // Sin giro (edificios y árboles): la mancha entera queda sobre su superficie.
+                assertTrue("sombra en " + s[0] + "," + s[2], Math.abs(s[0] - cx) + s[3] / 2 <= medio + 1e-4f);
+                assertTrue(Math.abs(s[2] - cz) + s[4] / 2 <= medio + 1e-4f);
+            } else { // Bancos: giran, alcanza con el radio.
+                assertTrue(Math.hypot(s[0] - cx, s[2] - cz) + radio <= medio);
+            }
+        }
+    }
+
+    /** Apenas por encima del suelo (sin z-fighting) y más tenue de noche. */
+    public void testElevacionYOpacidad() {
+        assertTrue(Sombras.ELEVACION_SOMBRA > 0.04f); // Sobre la pintura vial (0.04) y los senderos del parque.
+        assertTrue(Sombras.ELEVACION_SOMBRA < 0.2f); // Pero pegada al suelo.
+        assertTrue(Sombras.ALFA_SOMBRA_NOCHE < Sombras.ALFA_SOMBRA_DIA); // De noche, más tenue.
+        assertTrue(Sombras.ALFA_SOMBRA_DIA < 1); // Siempre semitransparente.
+    }
+}

@@ -55,13 +55,28 @@ Plano con leyenda (norte arriba; la primera fila es Z = -50 y la última Z = +50
 
 `MapaTest` verifica que todos los destinos y la salida caen sobre celdas de calle.
 
-**Farolas: en la vereda, no en el asfalto.** Cada farola se planta sobre la acera de una manzana (edificio o parque), a 0.4 del cordón del lado que da a la calle. Un brazo horizontal de `BRAZO_FAROLA` = 1.5 lleva la bombilla hacia la calle, así que queda 1.1 por encima de la calzada, a 4.5 de altura. La luz que recibe el shader sale de la bombilla. Nada de la farola se apoya en la calzada ni participa en colisiones.
+**Farolas: en la vereda, no en el asfalto.** Cada farola se planta sobre la acera de una manzana (edificio o parque), a 0.4 del cordón del lado que da a la calle. Un brazo curvo lleva la bombilla `BRAZO_FAROLA` = 1.5 hacia la calle, así que queda 1.1 por encima de la calzada, a 4.5 de altura. La luz que recibe el shader sale de la bombilla.
+
+**Luz de la farola: foco hacia abajo, no luz puntual.** Una luz puntual es omnidireccional: ilumina igual hacia todos lados, así que también encendía las paredes por encima de la pantalla, que en la realidad la tapa. Por eso `iluminacion.frag` trata cada farola como un foco (cono) con eje (0, −1, 0), con la misma lógica que los faros del auto (`factorCono()`, compartida): el ángulo entre el eje y la dirección bombilla → fragmento decide si llega luz. Dentro de `ANGULO_FAROLA_INTERIOR` (35°) es plena, fuera de `ANGULO_FAROLA_EXTERIOR` (60°) es nula y entre ambos baja con `smoothstep`; además conserva la atenuación por distancia (lineal + cuadrática). Resultado: un círculo de luz en el suelo, pleno en toda la vereda y que se desvanece pasando el centro de la calzada, y las paredes cercanas solo se iluminan por debajo de la bombilla (a unos 3 de altura como máximo), nunca por encima de la pantalla. La bombilla emisiva no cambia. Nada de la farola se apoya en la calzada ni participa en colisiones.
+
+**Modelo de la farola.** Solo usa las mallas de los árboles (cilindro, esfera y cono de `Figuras`), sin figuras nuevas. De abajo hacia arriba:
+- **Base:** cilindro corto y ancho, gris oscuro (0.42 de diámetro y 0.45 de alto).
+- **Poste:** dos tramos de cilindro gris metálico. El de arriba es más delgado (0.2 → 0.14), así el poste se afina hacia la punta, a 4.15 de altura.
+- **Brazo curvo:** tres tramos de cilindro que siguen `PERFIL_BRAZO`: uno empinado, uno suave y uno horizontal a 4.85. Cada tramo se inclina con `uRotacion`, cuyas columnas son el eje lateral, la dirección del tramo y su producto vectorial. Esferas chicas en los codos tapan las uniones.
+- **Luminaria:** una pantalla cónica casi negra cuelga de la punta del brazo. Debajo asoma la bombilla, una esfera de 0.32 gris claro de día; de noche es emisiva y de color blanco cálido.
+
+La bombilla se dibuja en `BOMBILLAS[i]`, el mismo punto que `preparar()` envía como `uLuces[i]`: el dibujo y la luz comparten la constante, sin coordenadas duplicadas. El modelo se arma sin OpenGL (`modeloFarola(i, noche)` devuelve la lista de piezas) y `dibujarFarolas()` solo lo recorre.
 
 Las 13 están a mitad de cuadra, lejos de las esquinas donde están los semáforos, los PARE y los pasos peatonales (al menos 3 unidades de cualquier señal), y repartidas por los cinco sectores: Centro 3, Barrio Norte 3, Parque Sur 3, Zona Oeste 2 y Zona Este 2. `FarolasTest` comprueba:
 - **Ubicación del poste:** cada farola está en una manzana con calle por el lado indicado, y el poste queda sobre la acera.
 - **Ubicación de la bombilla:** queda sobre el borde de la calle, en la punta del brazo.
+- **Bombilla dibujada = luz:** hay al menos 9 farolas y, de día y de noche, la bombilla del modelo está exactamente en la posición de la luz de su farola. Solo es emisiva de noche.
+- **Modelo conectado:** la base apoya en la acera, el poste llega al primer punto del brazo, el último tramo termina sobre la bombilla y cada rotación es una matriz ortonormal.
 - **Sin conflictos:** respeta la separación con semáforos, PARE y carteles, y no hay farolas sobre pasos peatonales.
 - **Reparto y colisiones:** hay farolas en todos los sectores y las calles siguen transitables.
+- **Foco hacia abajo:** con los valores leídos de `iluminacion.frag`, un punto por encima de la bombilla recibe 0, el suelo justo debajo recibe el máximo (cono pleno) y un punto fuera del cono exterior recibe 0.
+- **Atenuación:** a lo largo del eje, la luz disminuye con la distancia.
+- **Círculo de luz:** en cada farola llega luz a la vereda hasta la pared del edificio y al centro de la calzada, y la pared a la altura de la pantalla queda a oscuras.
 
 ### Edificios: cinco tipos
 
@@ -216,6 +231,33 @@ Como cada vértice lleva la normal de la superficie curva y no la de su triángu
 
 `CabinaTest` verifica la forma, que nada sobresalga del ancho del cuerpo y que las ventanillas queden dentro de la cabina y a cada lado del parante.
 
+### Ambiente: campo, cielo y sombras
+
+Antes la ciudad flotaba sobre un fondo azul liso y los objetos parecían despegados del suelo. Ahora hay tres agregados, todos visuales: no cambian `Mapa.LIMITE`, las colisiones ni la escala del minimapa.
+
+**Campo alrededor (`mundo/Entorno`).**
+- **Pasto:** se extiende `ENTORNO_EXTRA` = 100 más allá de cada borde (hasta ±155, `BORDE_CAMPO`). Son 4 franjas (norte, sur, oeste y este) que rodean la base de asfalto sin superponerse con ella. Una sola caja grande debajo de la ciudad quedaría casi en el mismo plano que el asfalto y, de lejos, parpadearía (z-fighting).
+- **Cordón:** una vereda gris de `ANCHO_CORDON` = 1.2, del alto de las aceras, justo afuera del borde. La calle perimetral termina contra él.
+- **Árboles:** 36 (`CANTIDAD_ARBOLES`), los mismos pinos y frondosos de los parques (`Parque.dibujarArbol`). Van entre 6 y 50 unidades afuera del borde. Las posiciones se sortean con `Variacion` y una semilla fija (`SEMILLA_ARBOLES`) por el método de rechazo: se elige un punto del cuadrado exterior y se descarta si cae dentro de la ciudad. Siempre salen iguales.
+- **Qué no cambia:** `Colisiones` sigue deteniendo al auto en el borde (`LIMITE - RADIO_AUTO`), así que nunca llega al cordón ni al pasto. En el minimapa no se dibuja.
+
+**Cielo con degradado (`iluminacion/Cielo`).**
+- **Cúpula:** es la esfera de `Figuras`, de radio `RADIO_CIELO` = 250 (dentro de `PLANO_LEJANO` = 320) y centrada en la cámara. Así el cielo nunca se acerca ni se aleja, como si estuviera infinitamente lejos. `iluminacion.frag` (rama `uCielo`) calcula el color con la dirección de la mirada: `mix(horizonte, cénit, altura^0.6)`.
+  - **De día:** azul intenso arriba y celeste claro en el horizonte.
+  - **De noche:** azul casi negro arriba y azul noche en el horizonte, con 160 estrellas (cajas chicas emisivas, en posiciones fijas sobre el horizonte) y una luna (esfera emisiva) hacia el norte-noreste.
+- **Se dibuja primero y sin escribir profundidad** (`glDepthMask(false)`). El depth buffer guarda la distancia de lo más cercano en cada píxel. Si la cúpula la escribiera, lo que está más lejos que ella (el final del campo desde la cámara aérea) quedaría tapado por el cielo. Sin escribirla, el buffer sigue vacío y todo lo que se dibuja después queda delante, sea cual sea el radio.
+- **Dónde se ve:** desde la cámara de seguimiento la vista apunta hacia abajo y casi no hay cielo en pantalla. Se ve bien en la orbital (C) bajando la cámara con el mouse, y arriba de la aérea.
+
+**Sombras falsas (`iluminacion/Sombras`).**
+- **Qué son:** una mancha oscura semitransparente debajo de cada edificio, auto (jugador y tráfico), árbol (de los parques y del campo) y banco. No calculan de dónde viene la luz: solo oscurecen el suelo bajo el objeto para que parezca apoyado.
+- **Forma:** cada mancha es el cubo aplastado, del tamaño y con el giro de su objeto. El shader (rama `uSombra`) recibe la posición local del fragmento (`vLocal`, de -0.5 a 0.5) y calcula una distancia al centro d = (|x|ⁿ + |z|ⁿ)^(1/n), con n = 2 (elipse) o n = 4 (rectángulo de esquinas redondeadas, para los edificios). La opacidad baja con `smoothstep` desde el núcleo hasta el borde, así los bordes son difusos y nunca rectangulares. En los edificios el degradado empieza en la pared, que es lo que se ve sobre la acera.
+- **Movimiento:** las de autos y tráfico siguen su posición y orientación en cada cuadro. Las demás se calculan una sola vez (`Sombras.FIJAS`).
+- **Blending:** con `GL_BLEND` y `glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` el color final es sombra · α + suelo · (1 − α): el suelo se oscurece sin taparse. α vale `ALFA_SOMBRA_DIA` = 0.45 en el centro, y de noche `ALFA_SOMBRA_NOCHE` = 0.22, más tenue.
+- **Sin escribir profundidad:** la prueba de profundidad sigue activa, así que la pared o la rueda que está delante tapa la mancha. Pero la mancha no escribe su distancia: así dos sombras superpuestas no se cortan con un borde duro. Por eso se dibujan al final de la escena opaca, cuando el suelo ya está pintado.
+- **Altura:** `ELEVACION_SOMBRA` = 0.06 sobre su superficie (asfalto, acera, césped o pasto), para evitar el z-fighting y quedar por encima de la pintura vial (0.04). Ninguna mancha fija sale de su acera o su césped. En el minimapa no se dibujan.
+
+`EntornoTest` comprueba que `Mapa.LIMITE` sigue en 55 y las colisiones no cambian: las calles perimetrales siguen transitables, el borde permitido es el de siempre y ni el cordón ni los árboles son alcanzables. También que los árboles están afuera, dentro del campo y son siempre los mismos. `AmbienteTest` comprueba que la cúpula, las estrellas y la luna entran en `PLANO_LEJANO`, que las estrellas están sobre el horizonte y que hay una sombra fija por edificio, árbol y banco, sin salir de su superficie, más tenue de noche.
+
 ## 3. Controles
 
 | Tecla | Acción |
@@ -250,11 +292,11 @@ Paquete `com.graphics.ciudad`:
 | Clase | Funciones |
 |---|---|
 | `Main` | Punto de entrada: crea `Juego` y llama a `ejecutar()`. |
-| `Juego` | Ciclo principal entrada → `actualizar(dt)` → dibujar, con dt limitado a 50 ms y llevado a 0 en menú o pausa. Reparte las teclas, compone el título, lleva el reloj global de la animación, impide que el jugador atraviese el tráfico, fija el orden de dibujo (ciudad, auto, tráfico, farolas, decoración, destino, minimapa, HUD) y libera los recursos. |
+| `Juego` | Ciclo principal entrada → `actualizar(dt)` → dibujar, con dt limitado a 50 ms y llevado a 0 en menú o pausa. Reparte las teclas, compone el título, lleva el reloj global de la animación, impide que el jugador atraviese el tráfico, fija el orden de dibujo (cielo, ciudad, campo, auto, tráfico, farolas, decoración, destino, sombras, minimapa, HUD) y libera los recursos. |
 | `motor/Ventana` | Ventana GLFW y contexto OpenGL 3.3 Core, callback de teclado, `pulsada()`, tamaño real del framebuffer, título, presentación y cierre, y callbacks de mouse (botones izquierdo y derecho, cursor y ruedita) que entregan a la cámara los arrastres de cada botón y el zoom. |
 | `motor/Shader` | Carga GLSL desde `resources/shaders`, normaliza `#version` para Windows, compila, enlaza y envía uniforms (`vector2`, `vector`, `vector4`, `decimal`, `entero`, `matriz3`) con caché de ubicaciones. |
 | `motor/Cubo` | Cubo de 36 vértices con normales en un VAO/VBO; `caja()` y `cajaGirada()` lo dibujan con posición, escala, giro y color. |
-| `motor/Camara` | Tres modos con C: seguimiento (12 unidades detrás del auto), orbital del auto y vista aérea de la ciudad. Las dos últimas se manejan con el mouse y usan cada una su `Orbita`: la del auto, centrada en el auto y relativa a su ángulo; la aérea, centrada en un punto de la ciudad que el botón derecho desplaza (`desplazar()`, limitado a ±`Mapa.LIMITE`). Al entrar a la aérea vuelve a la vista inicial, proporcional a `Mapa.LIMITE`. |
+| `motor/Camara` | Tres modos con C: seguimiento (12 unidades detrás del auto), orbital del auto y vista aérea de la ciudad. Las dos últimas se manejan con el mouse y usan cada una su `Orbita`: la del auto, centrada en el auto y relativa a su ángulo; la aérea, centrada en un punto de la ciudad que el botón derecho desplaza (`desplazar()`, limitado a ±`Mapa.LIMITE`). Al entrar a la aérea vuelve a la vista inicial, proporcional a `Mapa.LIMITE`. `getOjo()` devuelve la última posición de la cámara, donde `Cielo` centra su cúpula. |
 | `motor/Orbita` | Coordenadas esféricas compartidas por las dos cámaras con mouse: ángulo θ, elevación φ y distancia D alrededor de un centro, con sus límites. `girar()`, `acercar()`, `colocar()` y `ojo()`, que convierte (θ, φ, D) en la posición (D · cos φ · sen θ, D · sen φ, D · cos φ · cos θ) + centro. |
 | `motor/Texto` | Convierte texto en rectángulos con STBEasyFont; lo usan el HUD (2D) y los carteles de sector (3D). |
 | `motor/Malla` | Figura genérica en un VAO/VBO con el mismo formato que `Cubo` (posición + normal). Generadores por fórmulas: `esfera(sectores, anillos)` (esfera UV), `cilindro(lados)` con tapas y `cono(lados)` con base, todos unitarios. `dibujar()` / `dibujarGirada()` funcionan como `caja()` / `cajaGirada()`.. `extruir(perfil, ancho)` genera una figura extruida desde un perfil 2D con normales por cara (producto cruz). |
@@ -266,7 +308,8 @@ Paquete `com.graphics.ciudad`:
 | `mundo/Decoracion` | Fachadas de los edificios (delegadas en `Fachada`) y los pasos peatonales de `UBICACIONES_PASOS` (un paso por acceso de cada cruce con semáforo y hasta dos junto a cada parque, en ambas orientaciones); `hayPasoSobre()` permite que `Ciudad` corte la línea amarilla. Delega los parques en `Parque` y la señalización en `Senalizacion`. |
 | `mundo/Fachada` | Planta baja comercial en las caras a la calle: vidriera, puerta centrada y vidriera, con un toldo escalonado de color (a veces a rayas) sobre cada vidriera; las vidrieras se iluminan de noche. Ventanas en cada volumen según el patrón del tipo (`ventanas()`), sin tapar el negocio ni quedar dentro de otro volumen: vidrio claro de día; de noche, ≈65 % encendidas con tonos variados, decidido por ventana con un hash. |
 | `mundo/Variacion` | Hash determinístico `valor(fila, columna, índice, semilla)` que usan `Parque`, `Fachada` y `Edificio` para variar sin azar por cuadro. |
-| `mundo/Parque` | Senderos en cruz, fuente central, 4 a 6 árboles (frondosos de esferas y pinos de conos) y 2 a 4 bancos mirando a la fuente. `arboles()` y `bancos()` calculan la disposición de cada parque con `variacion()` (determinística). |
+| `mundo/Parque` | Senderos en cruz, fuente central, 4 a 6 árboles (frondosos de esferas y pinos de conos) y 2 a 4 bancos mirando a la fuente. `arboles()` y `bancos()` calculan la disposición de cada parque con `variacion()` (determinística). `dibujarArbol()` es estático: `Entorno` lo reutiliza para los árboles del campo. |
+| `mundo/Entorno` | Campo que rodea la ciudad: 4 franjas de pasto hasta `ENTORNO_EXTRA` más allá del borde, cordón de vereda y `ARBOLES` dispersos (posiciones determinísticas con `Variacion`). Solo decoración: no cambia `Mapa.LIMITE`, colisiones ni minimapa. |
 | `mundo/Senalizacion` | Ubica y dibuja la señalización vial: `INTERSECCIONES_SEMAFORO` (las del Centro), un cabezal por acceso (`SEMAFOROS`), `UBICACIONES_PARE` y `CARTELES_SECTOR`. `esquinaDerecha()` calcula la esquina de vereda a la derecha de un acceso y la orientación hacia el auto. |
 | `mundo/Semaforo` | Ciclo rojo (7 s) → verde (5 s) → amarillo (2 s) en bucle; `luzParaAcceso()` desfasa el grupo este-oeste 7 s para que sea complementario del norte-sur. Dibuja un cabezal orientado hacia su acceso; solo la luz activa brilla. |
 | `vehiculo/Auto` | Estado (x, z, ángulo, velocidad), física por dt (aceleración 9, resistencia exponencial, freno, límites -6..16), giro proporcional a la velocidad y `reset()`. Ruedas cilíndricas que giran según la distancia recorrida (`anguloRueda += avance / RADIO_RUEDA`), delanteras que doblan hasta 30° y vuelven solas al centro, luces de freno y de reversa (`frenando()`, `enReversa()`).. Las bombillas siguen a la tecla F, leída de `Iluminacion` al dibujar. |
@@ -276,7 +319,9 @@ Paquete `com.graphics.ciudad`:
 | `vehiculo/IndicadorJugador` | Flecha cian emisiva que apunta al auto desde la vista aérea; sube y baja y gira con el tiempo. |
 | `trafico/Vehiculo` | Auto autónomo: posición, ángulo, velocidad y color; calcula el carril derecho de su ruta (`calcularCarriles`) y lo sigue girando suavemente hacia el próximo waypoint, frena en las curvas y si el jugador está adelante; dibujo por piezas con luces traseras que brillan de noche. |
 | `trafico/Trafico` | Cuatro rutas en celdas de calle (`RUTAS_CELDAS`), validadas contra el Mapa al arrancar; crea, actualiza, reinicia y dibuja los vehículos, e indica a `Juego` si un movimiento del jugador lo haría atravesar uno. De noche envía al shader los focos de sus faros (`prepararFaros`). |
-| `iluminacion/Iluminacion` | Día/noche, faros, 13 farolas en la vereda (`LUCES` = manzana + lado; `POSTES` y `BOMBILLAS` se calculan desde ahí), envío de uniforms de luz y dibujo de poste, brazo y bombilla. |
+| `iluminacion/Cielo` | Cúpula centrada en la cámara con degradado cénit → horizonte (día y noche), `ESTRELLAS` determinísticas y luna emisiva. Se dibuja primero y sin escribir profundidad. |
+| `iluminacion/Sombras` | Sombras falsas: manchas con degradado circular bajo edificios, autos, árboles y bancos (`FIJAS` y las de los autos, que siguen posición y giro). Activa la mezcla, no escribe profundidad y restaura el estado al terminar. |
+| `iluminacion/Iluminacion` | Día/noche, faros, 13 farolas en la vereda (`LUCES` = manzana + lado; `POSTES` y `BOMBILLAS` se calculan desde ahí), envío de uniforms de luz y modelo de cada farola (`modeloFarola`: base, poste, brazo curvo, pantalla y bombilla con cilindros, esferas y un cono), dibujado por `dibujarFarolas()`. |
 | `juego/Entregas` | `DESTINOS` con nombres, regla de llegada, progreso, cronómetro, `reset()`, texto del título, marca dorada con baliza giratoria y cuadrado dorado en el minimapa. |
 | `juego/Minimapa` | Segundo pase de dibujo ortográfico con el norte arriba y la ciudad completa (escala `Mapa.LIMITE`). Usa scissor y viewport y restaura el estado al terminar. Muestra un indicador cian con punta blanca para la posición y la orientación del auto, el tráfico y las divisiones de los sectores; `aPantalla()` convierte coordenadas del mundo a píxeles para escribir sus nombres. |
 | `juego/EstadoPartida` | Estados MENU, JUGANDO y PAUSA; `dtEfectivo()` devuelve 0 fuera de JUGANDO, así todo queda congelado. |
@@ -285,8 +330,8 @@ Paquete `com.graphics.ciudad`:
 
 Shaders en `src/main/resources/shaders`:
 
-- `ciudad.vert`: escala, rotación y traslación del cubo; proyección en perspectiva o vista superior para el minimapa. La matriz `uRotacion` (identidad para todo, salvo las ruedas) agrega una rotación en cualquier eje antes del giro en Y.
-- `iluminacion.frag`: luz ambiente, sol (Lambert), farolas con atenuación y conos de los faros (`smoothstep`). La función `aporteFoco()` calcula un cono y la usan tanto los faros del jugador como los focos del tráfico (`uFarosTrafico`, `uDireccionFarosTrafico`, `uNumFarosTrafico`).
+- `ciudad.vert`: escala, rotación y traslación del cubo; proyección en perspectiva o vista superior para el minimapa. La matriz `uRotacion` (identidad para todo, salvo las ruedas) agrega una rotación en cualquier eje antes del giro en Y. `vLocal` pasa la posición dentro de la figura unitaria, para el degradado de las sombras.
+- `iluminacion.frag`: luz ambiente, sol (Lambert), farolas como focos hacia abajo con atenuación y conos de los faros (`smoothstep`). La función `factorCono()` calcula el borde suave de un cono y la usan las farolas y `aporteFoco()`, que a su vez usan tanto los faros del jugador como los focos del tráfico (`uFarosTrafico`, `uDireccionFarosTrafico`, `uNumFarosTrafico`). Dos ramas especiales: `uCielo` (degradado del cielo según la dirección de la mirada) y `uSombra` (mancha con alfa que baja con `smoothstep` hacia el borde).
 - `plano.frag`: shader de color plano de la primera lección, conservado como referencia.
 - `hud.vert` y `hud.frag`: dibujo 2D en píxeles con color RGBA, para el HUD.
 
@@ -310,14 +355,18 @@ Pruebas en `src/test/java/com/graphics/ciudad`:
 - `TraficoTest`: 120 s simulados con dt fijo; todos los vehículos siempre en calles, dentro del mapa, sin tocar manzanas, en movimiento y, en los tramos rectos, a `DESPLAZAMIENTO_CARRIL` ± 0.35 a la derecha de la línea central. Además comprueba que dos rutas comparten una calle en sentidos opuestos y la geometría de las esquinas de carril. También frenado ante el jugador, `reset()`, choque con el jugador y rutas inválidas rechazadas.
 - `LucesTraficoTest`: con noche activa todos los vehículos tienen las luces encendidas y con día apagadas; la tecla F no las cambia; los faros acompañan posición y orientación durante los giros.
 - `LucesVehiculoTest`: con F encendido los faros del jugador son emisivos (blanco cálido) y con F apagado no (gris oscuro); las traseras son luz de posición emisiva con F y rojo oscuro sin F; el freno domina en ambos casos, también con Espacio y F apagado.
+- `EntornoTest`: el campo no cambia `Mapa.LIMITE` (55) ni las colisiones (calles perimetrales transitables, mismo borde permitido, cordón y árboles inalcanzables); los árboles están todos afuera de la ciudad y del cordón, dentro del campo, con tipos y copas de parque, y son siempre los mismos.
+- `AmbienteTest`: la cúpula, las estrellas y la luna entran en `PLANO_LEJANO` de `ciudad.vert`; las estrellas tienen dirección unitaria y están sobre el horizonte; hay una sombra fija por edificio, árbol y banco, ninguna sale de su acera o su césped ni cae en la calle; las sombras quedan apenas sobre el suelo y son más tenues de noche.
 - `JuegoTest`: en menú y en pausa, `actualizar()` no mueve el auto ni el tráfico aunque se mantenga W; jugando, sí.
 
 ## 5. Mejoras opcionales implementadas
 
 | Mejora | Qué hace | Dónde |
 |---|---|---|
+| Ambiente | Campo verde con cordón y árboles alrededor de la ciudad, cielo con degradado (de noche con estrellas y luna) y sombras falsas con bordes difusos bajo edificios, autos, árboles y bancos. Ver "Ambiente" en la sección 2. | `mundo/Entorno`, `iluminacion/Cielo`, `iluminacion/Sombras`, `iluminacion.frag` (`uCielo`, `uSombra`) |
 | Edificios variados | Cinco tipos de edificio (torre con antena o tanque, bloque con baranda y ascensor, escalonado, casa baja con techo de teja a dos aguas y doble), elegidos por celda con un hash, con una paleta urbana de paredes y techos y ventanas según el tipo. Respetan la huella de la manzana: las colisiones no cambian. | `mundo/Edificio`, `mundo/TipoEdificio`, `mundo/Fachada`, `motor/Figuras` |
 | Figuras redondeadas y parques | Mallas nuevas generadas por fórmulas (esfera, cilindro y cono) con normales suaves, para que la luz del sol, las farolas y los faros las muestren redondeadas. Los parques tienen senderos, fuente, árboles frondosos y pinos, y bancos, con variación determinística entre parques. | `motor/Malla`, `motor/Figuras`, `mundo/Parque` |
+| Farolas redondeadas | Las farolas dejan de ser cubos: base ancha, poste que se afina, brazo curvo de tres tramos inclinados con `uRotacion`, pantalla cónica oscura y bombilla esférica, emisiva solo de noche, en la misma posición que la luz. | `iluminacion/Iluminacion` |
 | Auto mejorado | Ruedas cilíndricas con llanta, rayos y una marca roja que gira según la distancia recorrida; delanteras que doblan con A/D; luces de freno (rojo intenso) y de reversa (blanca), emisivas, de día y de noche. Las bombillas siguen a la tecla F: con F, faros blancos emisivos y luces de posición traseras en rojo tenue; sin F, apagadas (el freno sigue funcionando). Resuelve la limitación original "no hay ruedas animadas". | `vehiculo/Auto`, `vehiculo/LucesVehiculo`, `ciudad.vert` (`uRotacion`) |
 | Cabina con forma | La cabina deja de ser un bloque celeste: es un trapecio extruido desde un perfil lateral (`Malla.extruir`), con parabrisas y luneta inclinados, dos ventanillas por lado y un parante central, del color de cada auto. | `motor/Malla`, `vehiculo/Cabina`, `vehiculo/Auto`, `trafico/Vehiculo` |
 | Cámara orbital del auto | Nuevo modo de C: la cámara gira alrededor del auto con el mouse (arrastrar = girar y elevar, ruedita = zoom), con límites de elevación (5° a 85°) y de distancia (4 a 30); acompaña al auto cuando dobla y se puede seguir manejando. No afecta al minimapa ni al HUD. | `motor/Camara`, `motor/Ventana` |
@@ -334,8 +383,9 @@ Pruebas en `src/test/java/com/graphics/ciudad`:
 
 ## 6. Limitaciones conocidas
 
-- **Iluminación:** es local y sin sombras. La luz de una farola puede atravesar un edificio.
-- **Colisiones:** el auto choca solo con manzanas y bordes. Farolas, semáforos y árboles no tienen colisión, pero todos están sobre la vereda (el brazo de la farola vuela sobre la calzada a 4.6 de altura), dentro de la celda de una manzana: el auto nunca llega hasta ellos, porque la colisión con la manzana lo detiene antes.
+- **Iluminación:** es local y sin sombras reales. La luz de una farola puede atravesar un edificio (solo por debajo de la bombilla, dentro de su cono). Las sombras falsas son manchas debajo de cada objeto: no dependen de la dirección del sol ni de las farolas, y se oscurecen dos veces donde dos manchas se superponen.
+- **Cielo y campo:** desde la cámara de seguimiento casi no se ve el cielo (la vista mira hacia abajo). Desde la aérea alejada al máximo, el borde lejano del campo puede quedar más allá de `PLANO_LEJANO` y recortarse; detrás se ve el cielo.
+- **Colisiones:** el auto choca solo con manzanas y bordes. Farolas, semáforos y árboles no tienen colisión, pero todos están sobre la vereda (el brazo de la farola cruza el cordón a 4.7 de altura y lo más bajo sobre la calzada es la bombilla, a 4.34), dentro de la celda de una manzana: el auto nunca llega hasta ellos, porque la colisión con la manzana lo detiene antes.
 - **Choques:** el auto se detiene sin rebote. El círculo de colisión es conservador, por eso el auto frena un poco antes de tocar la acera.
 - **Semáforos:** son visuales: ni el tráfico ni el jugador se detienen en rojo (el alcance del enunciado es visual). No hay peatones ni audio.
 - **Luces del tráfico:** sus focos iluminan la calle y los edificios, pero no proyectan sombras (como todas las luces del juego). `MAX_FAROS_TRAFICO` limita el tráfico con luces a 8 vehículos; si hubiera más, los restantes circularían con las bombillas encendidas pero sin foco.
@@ -374,7 +424,9 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | Cambio | Archivo | Constante o dato |
 |---|---|---|
 | Mover o agregar una farola | `iluminacion/Iluminacion.java` | `LUCES`: cada farola es `{fila, columna, lado}`: una celda de manzana (fila y columna impares) y el lado que da a la calle (`NORTE`, `SUR`, `OESTE`, `ESTE`). El poste y la bombilla se calculan solos; conviene elegir bordes a mitad de cuadra, lejos de semáforos, PARE y pasos (`FarolasTest` lo verifica). Máximo `MAX_LUCES` = 16 |
-| Forma de las farolas | `iluminacion/Iluminacion.java` | `BRAZO_FAROLA` (1.5), `MARGEN_POSTE` (0.4, del cordón al poste), `ALTURA_BOMBILLA` (4.5) |
+| Ubicación de la bombilla (y de la luz) | `iluminacion/Iluminacion.java` | `BRAZO_FAROLA` (1.5), `MARGEN_POSTE` (0.4, del cordón al poste), `ALTURA_BOMBILLA` (4.5). Mueven la bombilla dibujada y la luz juntas |
+| Forma de las farolas | `iluminacion/Iluminacion.java` | `ANCHO_BASE` (0.42), `ALTO_BASE` (0.45), `ANCHO_POSTE_ABAJO` (0.2), `ANCHO_POSTE_ARRIBA` (0.14), `GROSOR_BRAZO` (0.09), `PERFIL_BRAZO` (puntos {avance, altura} de los 3 tramos del brazo), `ANCHO_PANTALLA` (0.8), `ALTO_PANTALLA` (0.3), `SEPARACION_PANTALLA` (0.05), `DIAMETRO_BOMBILLA` (0.32) |
+| Colores de las farolas | `iluminacion/Iluminacion.java` | `COLOR_BASE` (gris oscuro), `COLOR_POSTE` (gris metálico), `COLOR_PANTALLA` (casi negro), `COLOR_BOMBILLA_DIA` (gris claro), `COLOR_BOMBILLA_NOCHE` (blanco cálido, emisivo) |
 | Agregar un parque o un edificio | `mundo/Mapa.java` | `MAPA`: una celda con fila y columna impares a `2` (parque) o `1` (edificio) |
 | Velocidad y manejo del auto | `vehiculo/Auto.java` | `VELOCIDAD_MAX` (16), `VELOCIDAD_REVERSA` (6), `ACELERACION` (9), `RESISTENCIA` (0.7), `FRENO` (7), `VELOCIDAD_GIRO` (0.11) |
 | Ruedas y dirección | `vehiculo/Auto.java` | `RADIO_RUEDA` (0.32), `ANCHO_RUEDA` (0.24), `FRACCION_LLANTA` (0.62), `ANGULO_MAX_DIRECCION` (30°), `VELOCIDAD_DIRECCION` (3 rad/s), `COLOR_NEUMATICO`, `COLOR_LLANTA`, `COLOR_MARCA_LLANTA` |
@@ -425,6 +477,12 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | Árboles de los parques | `mundo/Parque.java` | `ARBOLES_MIN` / `ARBOLES_MAX` (4 / 6), `COPA_MAXIMA` (1/4 de la celda = 2.5), `RADIO_CENTRO_LIBRE` (2.2), `LUGARES_ARBOL` (esquinas y bordes posibles), `SEPARACION_POSTES` (1.6) |
 | Senderos, fuente y bancos | `mundo/Parque.java` | `ANCHO_SENDERO` (1.4), `GROSOR_SENDERO` (0.03), `COLOR_SENDERO`, `RADIO_FUENTE` (1.2), `COLOR_AGUA`, `COLOR_AGUA_NOCHE`, `BANCOS_MIN` / `BANCOS_MAX` (2 / 4), `DISTANCIA_BANCO` (2.3) |
 | Divisiones de sectores en el minimapa | `juego/Minimapa.java` | `GROSOR_DIVISION` (0.7), `ALTURA_DIVISION` (22) |
+| Campo alrededor de la ciudad | `mundo/Entorno.java` | `ENTORNO_EXTRA` (100: cuánto sigue el pasto más allá del borde; no cambia `Mapa.LIMITE`), `ALTURA_CAMPO` (0), `COLOR_CAMPO`, `ANCHO_CORDON` (1.2), `ALTO_CORDON` (0.3), `COLOR_CORDON` |
+| Árboles del campo | `mundo/Entorno.java` | `CANTIDAD_ARBOLES` (36), `DISTANCIA_MIN_ARBOL` (6 desde el borde; debe superar cordón + media copa o `EntornoTest` avisa), `ANCHO_FRANJA_ARBOLES` (50), `SEMILLA_ARBOLES` (211: otra semilla, otra disposición, siempre la misma) |
+| Colores del cielo | `iluminacion/Cielo.java` | `COLOR_CENIT_DIA` (azul intenso), `COLOR_HORIZONTE_DIA` (celeste claro), `COLOR_CENIT_NOCHE` (azul casi negro), `COLOR_HORIZONTE_NOCHE` (azul noche); `RADIO_CIELO` (250, menor que `PLANO_LEJANO`) |
+| Estrellas y luna | `iluminacion/Cielo.java` | `CANTIDAD_ESTRELLAS` (160), `SEMILLA_ESTRELLAS` (97), `ALTURA_MIN_ESTRELLA` (0.08 ≈ 5° sobre el horizonte), `TAMANO_MIN_ESTRELLA` / `TAMANO_MAX_ESTRELLA` (0.5 / 1.3), `BRILLO_MIN_ESTRELLA` (0.55); `DIRECCION_LUNA` (norte-noreste, ≈ 19° de altura), `DIAMETRO_LUNA` (11), `COLOR_LUNA` |
+| Sombras falsas | `iluminacion/Sombras.java` | `ALFA_SOMBRA_DIA` (0.45) / `ALFA_SOMBRA_NOCHE` (0.22, más tenue), `COLOR_SOMBRA`, `ELEVACION_SOMBRA` (0.06 sobre la superficie: más chico puede parpadear o quedar bajo la pintura vial), `NUCLEO_SOMBRA` (0.35: dónde empieza el difuminado), `FORMA_REDONDA` (2) / `FORMA_CUADRADA` (4) |
+| Tamaño de cada sombra | `iluminacion/Sombras.java` | `ESCALA_SOMBRA_EDIFICIO` (1.4 · base de 7 = 9.8; mantener < 10/7 para no salir de la acera), `SOMBRA_AUTO` (2.3 × 3.5), `ESCALA_SOMBRA_ARBOL` (1.25 · copa), `SOMBRA_BANCO` (2.1 × 1.0) |
 
 ### Iluminación y proyección (shaders GLSL en `src/main/resources/shaders`)
 
@@ -434,12 +492,15 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | Intensidad y dirección del sol | `iluminacion.frag` | `INTENSIDAD_SOL_DIA` (0.65), `INTENSIDAD_SOL_NOCHE` (0.10), `DIRECCION_SOL` (0.4, 1.0, 0.3) |
 | Alcance de las farolas | `iluminacion.frag` | `FAROLA_ATENUACION_LINEAL` (0.12), `FAROLA_ATENUACION_CUADRATICA` (0.045); más chico = más alcance |
 | Color y fuerza de las farolas | `iluminacion.frag` | `COLOR_FAROLA` (1.0, 0.73, 0.34), `INTENSIDAD_FAROLA` (3.0) |
+| Tamaño del círculo de luz de las farolas | `iluminacion.frag` | `ANGULO_FAROLA_INTERIOR` (35°, luz plena), `ANGULO_FAROLA_EXTERIOR` (60°, fin del borde suave); en grados desde la vertical. Más grande = círculo más ancho; el exterior debe quedar por debajo de 90° o la luz volvería a subir por las paredes. `FarolasTest` verifica que siga cubriendo vereda y calzada |
+| Dirección del foco de las farolas | `iluminacion.frag` | `DIRECCION_FAROLA` (0, −1, 0): recto hacia abajo |
 | Ángulo del cono de los faros | `iluminacion.frag` | `CONO_BORDE` (0.85 ≈ 32°), `CONO_CENTRO` (0.97 ≈ 14°); son cosenos, así que más cerca de 1 = cono más angosto |
 | Alcance y fuerza de los faros | `iluminacion.frag` | `FAROS_ATENUACION_CUADRATICA` (0.04), `INTENSIDAD_FARO` (8.0), `COLOR_FARO` (1.0, 0.94, 0.72) |
 | Posición e inclinación de los faros | `iluminacion.frag` | `FAROS_SEPARACION` (0.55), `FAROS_AVANCE` (1.36), `FAROS_INCLINACION` (0.10) |
 | Campo visual de la cámara | `ciudad.vert` | `CAMPO_VISUAL` (55°) |
 | Distancia de dibujo | `ciudad.vert` | `PLANO_CERCANO` (0.1), `PLANO_LEJANO` (320); este último debe cubrir la ciudad desde la vista aérea alejada al máximo con el centro en una esquina (143 + 156 de diagonal ≈ 299). `CamaraTest` lo verifica |
 | Orden de alturas en el minimapa | `ciudad.vert` | `ESCALA_ALTURA_MAPA` (100) |
+| Reparto del degradado del cielo | `iluminacion.frag` | `CURVA_CIELO` (0.6): exponente de la altura; más chico = el azul intenso baja más cerca del horizonte |
 
 ## 9. Guion de demostración
 
@@ -450,9 +511,9 @@ Sigue el orden del enunciado. Antes de empezar, conviene tener la ventana en tam
 | 0 | `mvn compile exec:exec` y **ENTER** | Menú de inicio con el título; al presionar ENTER, la partida arranca de día, con la cámara de seguimiento, el minimapa arriba a la derecha y el HUD arriba a la izquierda |
 | 1 | **W** para acelerar, **A / D** para girar, **S** para frenar y retroceder, **Espacio** para el freno fuerte | El auto acelera y dobla. Velocidad en el título y en el HUD. El tráfico circula por su carril |
 | 2 | Chocar contra una vereda o manzana, y acercarse a un vehículo del tráfico | El auto se detiene sin atravesar la manzana ni al otro vehículo. El vehículo del tráfico frena si el auto está adelante |
-| 3 | **C** (tres veces) | Cámara orbital del auto (arrastrar con el mouse para girar y elevar, ruedita para acercar); después la vista aérea de toda la ciudad, con la flecha cian sobre el auto: arrastrar con el botón izquierdo para girar alrededor de la ciudad, ruedita para acercar y botón derecho para recorrerla; al final vuelve la cámara de seguimiento |
+| 3 | **C** (tres veces) | Cámara orbital del auto (arrastrar con el mouse para girar y elevar, ruedita para acercar); después la vista aérea de toda la ciudad, rodeada de campo con árboles y con sombras suaves bajo edificios, árboles y autos, con la flecha cian sobre el auto: arrastrar con el botón izquierdo para girar alrededor de la ciudad, ruedita para acercar y botón derecho para recorrerla; al final vuelve la cámara de seguimiento |
 | 3b | En la cámara orbital (**C** una vez), girar hasta ver el auto de costado y manejar: **W**, **A/D**, **S** y **Espacio** | Las ruedas giran (la marca roja da vueltas) y las delanteras doblan con A/D. Mirando la cola del auto: al frenar se encienden las luces de freno y al ir marcha atrás, la luz blanca de reversa. Funciona de día y de noche |
-| 4 | **N** | Noche: farolas, ventanas encendidas (≈65 %, tonos variados), vidrieras iluminadas, luces del tráfico con sus focos sobre la calle. El HUD y el título muestran "Noche" |
+| 4 | **N** | Noche: cielo azul oscuro con estrellas y luna (se ven con la orbital baja), farolas, ventanas encendidas (≈65 %, tonos variados), vidrieras iluminadas, luces del tráfico con sus focos sobre la calle. El HUD y el título muestran "Noche" |
 | 5 | **F** (y otra vez **F**) | Se apagan y encienden los faros del jugador: los conos sobre la calle, las bombillas delanteras (blancas y emisivas) y las luces de posición traseras. Frenando con S o Espacio, las traseras pasan a rojo intenso aunque F esté apagado. Las luces del tráfico no cambian |
 | 6 | **M** (y otra vez **M**) | Se oculta y vuelve el minimapa, con la ciudad completa, el norte arriba, los sectores con nombre, el auto (cian con punta blanca) y el destino dorado |
 | 7 | Redimensionar la ventana (achicar y agrandar) | La escena mantiene sus proporciones, el minimapa sigue en la esquina superior derecha y el HUD se adapta |

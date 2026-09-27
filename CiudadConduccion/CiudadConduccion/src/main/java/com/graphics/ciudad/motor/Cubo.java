@@ -106,9 +106,9 @@ public class Cubo {
 
     /**
      * Caja translúcida y emisiva: se mezcla con lo que hay detrás.
-     * HOY NO LA USA NADIE: los halos de las luces del auto se quitaron. Se conserva, junto con uAlfa en
-     * iluminacion.frag, para las sombras falsas pendientes (rectángulos oscuros translúcidos bajo los objetos), que
-     * necesitan mezcla: con un color casi negro y alfa bajo, oscurece el suelo sin taparlo.
+     * HOY NO LA USA NADIE: los halos de las luces del auto se quitaron. Se conserva como ejemplo mínimo de mezcla
+     * con alfa parejo en toda la caja. Las sombras falsas (iluminacion/Sombras) usan la misma idea, pero activan la
+     * mezcla una sola vez para todas las manchas y el shader les da un degradado circular (bordes difusos).
      * Activa la mezcla alfa (color · alfa + fondo · (1 - alfa)) y NO escribe profundidad (glDepthMask(false)): así la
      * caja no tapa lo que se dibuje después detrás de ella; conviene dibujarla al final de la escena, después de todo lo
      * opaco. Al terminar restaura el estado opaco normal de la escena.
