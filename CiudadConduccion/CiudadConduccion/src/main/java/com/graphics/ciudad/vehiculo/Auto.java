@@ -1,7 +1,7 @@
 package com.graphics.ciudad.vehiculo; // Agrupa el vehículo del jugador y sus colisiones.
 
 import com.graphics.ciudad.motor.Cubo; // Dibuja cada pieza del vehículo.
-import com.graphics.ciudad.motor.Figuras; // Cilindros para las ruedas.
+import com.graphics.ciudad.motor.Figuras; // Cilindros de las ruedas (los dibuja Rueda).
 import com.graphics.ciudad.motor.Shader; // Emisión de las luces de freno y reversa, y rotación de las ruedas (uRotacion).
 import com.graphics.ciudad.mundo.Mapa; // Centro de la calle de salida y ancho de celda.
 import java.util.function.IntPredicate; // Pregunta si una tecla está presionada sin depender de GLFW.
@@ -13,8 +13,8 @@ import static org.lwjgl.glfw.GLFW.*; // Incluye las constantes de las teclas de 
  * (aceleración, resistencia, freno, límites y giro), el reinicio con R (reset()) y el dibujo con piezas locales.
  * Se comunica con: Colisiones (valida cada posición propuesta), Cubo (dibuja las piezas), Juego (lo actualiza
  * y lo reinicia); Camara, Iluminacion, Entregas y Minimapa leen su estado con los getters.
- * Además: ruedas cilíndricas que giran según la distancia recorrida, ruedas delanteras que doblan con la dirección,
- * luces de freno (al frenar) y de reversa (al ir hacia atrás), que funcionan de día y de noche.
+ * Además: ruedas redondas (vehiculo/Rueda, compartidas con el tráfico) que giran según la distancia recorrida,
+ * delanteras que doblan con la dirección, luces de freno (al frenar) y de reversa (al ir hacia atrás), de día y de noche.
  * FAROS: el auto no guarda si están encendidos; Juego le pasa Iluminacion.farosEncendidos() (tecla F) al dibujar.
  * Con F encendido, los faros son bombillas blancas emisivas y las traseras, luces de posición (rojo tenue emisivo);
  * con F apagado, faros gris oscuro y traseras rojo oscuro. El freno (rojo intenso) tiene prioridad en ambos casos.
@@ -33,15 +33,8 @@ public class Auto {
     public static final float VELOCIDAD_GIRO = 0.11f; // Radianes girados por segundo y por unidad de velocidad: el giro crece con la velocidad.
 
     // ==================== 0b. RUEDAS, DIRECCIÓN Y LUCES (valores ajustables) ====================
-    public static final float RADIO_RUEDA = 0.32f; // Radio de cada rueda: el centro queda a esta altura y la rueda toca el asfalto (Y = 0).
-    public static final float ANCHO_RUEDA = 0.24f; // Ancho del neumático (a lo largo del eje de la rueda).
-    public static final float FRACCION_LLANTA = 0.62f; // La llanta gris ocupa el 62 % del diámetro del neumático.
-    public static final float ANGULO_MAX_DIRECCION = (float) Math.toRadians(30); // Máximo giro de las ruedas delanteras: 30°.
-    public static final float VELOCIDAD_DIRECCION = 3; // Radianes por segundo con que las ruedas delanteras doblan o vuelven al centro.
+    // Medidas, colores, ubicación y dirección de las ruedas: en vehiculo/Rueda, compartidas con el tráfico.
     public static final float UMBRAL_MOVIMIENTO = 0.1f; // Por debajo de esta velocidad (unidades/s) el auto se considera detenido.
-    public static final float[] COLOR_NEUMATICO = {0.055f, 0.065f, 0.08f}; // Caucho casi negro.
-    public static final float[] COLOR_LLANTA = {0.62f, 0.64f, 0.68f}; // Metal gris claro.
-    public static final float[] COLOR_MARCA_LLANTA = {0.85f, 0.10f, 0.08f}; // Marca roja en la llanta: hace visible la rotación.
     // Faros y luces traseras (posición y freno) usan los colores de LucesVehiculo, compartidos con el tráfico.
     public static final float[] COLOR_CARROCERIA = {0.95f, 0.24f, 0.12f}; // Rojo del auto: carrocería y cabina (techo y parantes).
     public static final float[] COLOR_REVERSA_APAGADA = {0.75f, 0.75f, 0.72f}; // Luz de reversa apagada: plástico claro.
@@ -149,10 +142,8 @@ public class Auto {
 
         // Ruedas delanteras: se acercan al ángulo pedido (±ANGULO_MAX_DIRECCION o 0 al soltar) a VELOCIDAD_DIRECCION
         // radianes por segundo, así doblan y vuelven al centro suavemente en lugar de saltar.
-        float objetivoDireccion = direccion * ANGULO_MAX_DIRECCION; // Hacia dónde deberían apuntar las ruedas.
-        float pasoDireccion = VELOCIDAD_DIRECCION * deltaTime; // Lo máximo que pueden moverse en este cuadro.
-        anguloDireccion += Math.max(-pasoDireccion, Math.min(pasoDireccion, objetivoDireccion - anguloDireccion)); // Paso limitado.
-        anguloDireccion = Math.max(-ANGULO_MAX_DIRECCION, Math.min(ANGULO_MAX_DIRECCION, anguloDireccion)); // Nunca más de 30°.
+        float objetivoDireccion = direccion * Rueda.ANGULO_MAX_DIRECCION; // Hacia dónde deberían apuntar las ruedas.
+        anguloDireccion = Rueda.acercarDireccion(anguloDireccion, objetivoDireccion, deltaTime); // Paso limitado, tope de 30°.
 
         // Luces: se frena con S mientras el auto todavía va hacia adelante, o con Espacio en cualquier momento.
         frenando = teclaFreno || (teclaAtras && velocidadAntes > UMBRAL_MOVIMIENTO); // Enciende las luces de freno.
@@ -188,18 +179,8 @@ public class Auto {
             }
         }
         float avance = (x - antesX) * frenteX + (z - antesZ) * frenteZ; // Lo recorrido a lo largo del frente (con signo).
-        anguloRueda += giroPorDistancia(avance); // Las ruedas giran lo que avanzó el auto: menos si deslizó.
+        anguloRueda += Rueda.giroPorDistancia(avance); // Las ruedas giran lo que avanzó el auto: menos si deslizó.
         enReversa = velocidad < -UMBRAL_MOVIMIENTO; // Enciende la luz de reversa mientras el auto va hacia atrás.
-    }
-
-    /**
-     * Ángulo que gira una rueda al recorrer "distancia" sin patinar. Un radián es el ángulo cuyo arco mide lo mismo que
-     * el radio: si la rueda avanza una distancia d, el punto de contacto recorre un arco de largo d sobre su borde, y
-     * ese arco corresponde a d / RADIO_RUEDA radianes. Una vuelta completa (2π) recorre la circunferencia, 2π · radio.
-     * Una distancia negativa (reversa) da un ángulo negativo: la rueda gira hacia atrás.
-     */
-    public static float giroPorDistancia(float distancia) {
-        return distancia / RADIO_RUEDA; // Ángulo en radianes = arco / radio.
     }
 
     // ==================== 4. DIBUJO DEL AUTO ====================
@@ -212,15 +193,7 @@ public class Auto {
         float[] c = COLOR_CARROCERIA; // Color del auto.
         pieza(cubo, 0, 0.65f, 0, 1.65f, 0.55f, 2.6f, c[0], c[1], c[2]); // Dibuja la carrocería roja.
         cabina.dibujar(x, z, angulo, c[0], c[1], c[2]); // Cabina trapezoidal del color del auto, con vidrios (antes un bloque celeste).
-        float[] ladosRuedas = {-0.88f, 0.88f}; // Ubica ruedas a izquierda y derecha del auto.
-        float[] ejesRuedas = {-0.82f, 0.82f}; // Ubica las ruedas delanteras (Z local negativa) y traseras.
-
-        for (float ladoX : ladosRuedas) { // Selecciona uno de los dos lados del vehículo.
-            for (float ejeZ : ejesRuedas) { // Selecciona el eje delantero o trasero.
-                boolean delantera = ejeZ < 0; // El frente del auto es -Z local: esas ruedas doblan.
-                dibujarRueda(cubo, figuras, shader, ladoX, ejeZ, delantera ? anguloDireccion : 0); // Dibuja una rueda redonda.
-            }
-        }
+        Rueda.dibujarCuatro(cubo, figuras, shader, x, z, angulo, anguloRueda, anguloDireccion); // Ruedas redondas; las delanteras doblan.
 
         float[] ladosFaros = {-LucesVehiculo.LADO_LUZ, LucesVehiculo.LADO_LUZ}; // Define la separación lateral de las luces.
         float[] faro = LucesVehiculo.colorFaro(farosEncendidos); // Con F: blanco cálido emisivo; sin F: gris oscuro.
@@ -238,55 +211,6 @@ public class Auto {
             pieza(cubo, ladoX * 0.4f, y, LucesVehiculo.TRASERA_LUZ + 0.01f, 0.16f, 0.12f, 0.06f, reversa[0], reversa[1], reversa[2]); // Luz de reversa, hacia el centro.
         }
         shader.entero("uEmision", 0); // Restablece el material normal para el siguiente objeto.
-    }
-
-    /**
-     * Matriz (por columnas) que orienta el cilindro como rueda y lo hace girar sobre su eje:
-     * 1) Ry(-anguloRueda) gira el cilindro alrededor de su propio eje (Y del cilindro);
-     * 2) Rz(-90°) acuesta ese eje sobre el X local del auto (el eje de la rueda, de lado a lado).
-     * Producto Rz(-90°) · Ry(φ) con c = cos φ y s = sen φ: columnas (0, -c, -s), (1, 0, 0) y (0, -s, c).
-     * Se usa -anguloRueda porque, con esta orientación, un ángulo positivo movería la parte de arriba de la rueda hacia
-     * atrás (+Z local); con el signo cambiado, al avanzar la parte de arriba va hacia el frente, como una rueda real.
-     * El giro en Y del auto y de la dirección lo aplica después el shader con uGiro.
-     */
-    public static float[] rotacionRueda(float anguloRueda) {
-        float c = (float) Math.cos(-anguloRueda); // Coseno del giro sobre el eje.
-        float s = (float) Math.sin(-anguloRueda); // Seno del giro sobre el eje.
-        return new float[] {0, -c, -s, 1, 0, 0, 0, -s, c}; // Columnas de Rz(-90°) · Ry(-anguloRueda).
-    }
-
-    /**
-     * Rueda redonda: neumático (cilindro oscuro), llanta (cilindro gris más chico y apenas más ancho, se ve de ambos
-     * lados), dos rayos en cruz y una marca roja descentrada: la marca da vueltas y hace evidente la rotación.
-     * direccion es el giro extra en Y de la rueda (solo las delanteras) respecto del auto.
-     */
-    private void dibujarRueda(Cubo cubo, Figuras figuras, Shader shader, float localX, float localZ, float direccion) {
-        float coseno = (float) Math.cos(angulo); // Orientación del auto.
-        float seno = (float) Math.sin(angulo); // Orientación del auto.
-        float ruedaX = x + coseno * localX + seno * localZ; // Centro de la rueda en el mundo (igual que pieza()).
-        float ruedaZ = z - seno * localX + coseno * localZ; // Centro de la rueda en Z.
-        float giroY = angulo + direccion; // La rueda mira hacia donde apunta el auto más el giro de la dirección.
-        float[] rotacion = rotacionRueda(anguloRueda); // Acuesta el cilindro y lo hace rodar.
-        float diametro = 2 * RADIO_RUEDA; // Diámetro del neumático.
-        shader.matriz3("uRotacion", rotacion); // Todo lo que sigue gira con la rueda.
-        figuras.cilindro.dibujarGirada(ruedaX, RADIO_RUEDA, ruedaZ, diametro, ANCHO_RUEDA, diametro,
-            COLOR_NEUMATICO[0], COLOR_NEUMATICO[1], COLOR_NEUMATICO[2], giroY); // Neumático: el cilindro tiene su eje en Y antes de rotar.
-        float llanta = diametro * FRACCION_LLANTA; // Diámetro de la llanta.
-        figuras.cilindro.dibujarGirada(ruedaX, RADIO_RUEDA, ruedaZ, llanta, ANCHO_RUEDA + 0.02f, llanta,
-            COLOR_LLANTA[0], COLOR_LLANTA[1], COLOR_LLANTA[2], giroY); // Llanta gris, sobresale 0.01 de cada lado.
-        cubo.cajaGirada(ruedaX, RADIO_RUEDA, ruedaZ, llanta * 0.9f, ANCHO_RUEDA + 0.04f, 0.06f, 0.3f, 0.3f, 0.32f, giroY); // Rayo en una dirección.
-        cubo.cajaGirada(ruedaX, RADIO_RUEDA, ruedaZ, 0.06f, ANCHO_RUEDA + 0.04f, llanta * 0.9f, 0.3f, 0.3f, 0.32f, giroY); // Rayo perpendicular.
-        // Marca descentrada: su centro está a d del eje, sobre el X del cilindro. Ese punto se rota igual que la rueda
-        // (columna 0 de la matriz = hacia dónde queda el X del cilindro en coordenadas del auto) y después con el auto.
-        float d = llanta * 0.3f; // Distancia de la marca al centro de la rueda.
-        float marcaLocalX = localX + rotacion[0] * d; // Desplazamiento de la marca en X local del auto.
-        float marcaY = RADIO_RUEDA + rotacion[1] * d; // Altura de la marca: sube y baja al girar.
-        float marcaLocalZ = localZ + rotacion[2] * d; // Desplazamiento en Z local (sin contar la dirección: la diferencia es mínima).
-        float marcaX = x + coseno * marcaLocalX + seno * marcaLocalZ; // Marca en el mundo, X.
-        float marcaZ = z - seno * marcaLocalX + coseno * marcaLocalZ; // Marca en el mundo, Z.
-        cubo.cajaGirada(marcaX, marcaY, marcaZ, 0.1f, ANCHO_RUEDA + 0.06f, 0.1f,
-            COLOR_MARCA_LLANTA[0], COLOR_MARCA_LLANTA[1], COLOR_MARCA_LLANTA[2], giroY); // Marca roja que da vueltas.
-        shader.matriz3("uRotacion", Shader.IDENTIDAD_3X3); // Lo siguiente vuelve a girar solo en Y.
     }
 
     /** Transforma una pieza del espacio local del auto al espacio de la ciudad. */

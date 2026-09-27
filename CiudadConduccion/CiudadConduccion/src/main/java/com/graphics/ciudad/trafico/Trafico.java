@@ -1,6 +1,7 @@
 package com.graphics.ciudad.trafico; // Agrupa el tráfico autónomo: vehículos y sus rutas.
 
 import com.graphics.ciudad.motor.Cubo; // Dibuja los vehículos.
+import com.graphics.ciudad.motor.Figuras; // Cilindros de las ruedas.
 import com.graphics.ciudad.motor.Shader; // Activa la emisión de las luces traseras.
 import com.graphics.ciudad.mundo.Mapa; // Convierte celdas en coordenadas y comprueba que las rutas usen calles.
 import com.graphics.ciudad.vehiculo.Auto; // Radio del círculo del jugador.
@@ -177,9 +178,9 @@ public class Trafico {
     // ==================== 4. DIBUJO Y CONSULTAS ====================
 
     /** Dibuja todos los vehículos; de noche sus faros y luces traseras brillan. */
-    public void dibujar(Cabina cabina) {
+    public void dibujar(Figuras figuras, Cabina cabina) {
         for (Vehiculo vehiculo : vehiculos) { // Recorre los vehículos.
-            vehiculo.dibujar(cubo, shader, cabina); // Cada uno se dibuja con sus piezas, su color, su cabina y sus luces.
+            vehiculo.dibujar(cubo, figuras, shader, cabina); // Cada uno con sus piezas, su color, su cabina, sus ruedas y sus luces.
         }
     }
 

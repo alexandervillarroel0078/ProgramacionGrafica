@@ -65,9 +65,9 @@ public class AutoTest extends TestCase {
 
     /** Recorrer 2π · RADIO_RUEDA gira la rueda exactamente 2π (una vuelta); en reversa el ángulo es negativo. */
     public void testAnguloDeRueda() {
-        float circunferencia = (float) (2 * Math.PI * Auto.RADIO_RUEDA); // Distancia de una vuelta completa.
-        assertEquals((float) (2 * Math.PI), Auto.giroPorDistancia(circunferencia), 1e-5f); // Una vuelta = 2π.
-        assertEquals((float) (-2 * Math.PI), Auto.giroPorDistancia(-circunferencia), 1e-5f); // Hacia atrás: -2π.
+        float circunferencia = (float) (2 * Math.PI * Rueda.RADIO_RUEDA); // Distancia de una vuelta completa.
+        assertEquals((float) (2 * Math.PI), Rueda.giroPorDistancia(circunferencia), 1e-5f); // Una vuelta = 2π.
+        assertEquals((float) (-2 * Math.PI), Rueda.giroPorDistancia(-circunferencia), 1e-5f); // Hacia atrás: -2π.
 
         Auto auto = new Auto(); // Sale hacia el norte por la calle del borde oeste (recta de 100 unidades).
         float zInicial = auto.getZ(); // Posición de partida.
@@ -76,7 +76,7 @@ public class AutoTest extends TestCase {
         }
         float avanzado = zInicial - auto.getZ(); // Hacia el norte Z disminuye: distancia recorrida.
         assertTrue(avanzado > circunferencia); // Recorrió más de una vuelta de rueda.
-        assertEquals(Auto.giroPorDistancia(avanzado), auto.getAnguloRueda(), 1e-3f); // Ángulo = distancia / radio.
+        assertEquals(Rueda.giroPorDistancia(avanzado), auto.getAnguloRueda(), 1e-3f); // Ángulo = distancia / radio.
 
         Auto atras = new Auto(); // Otro auto, detenido en la salida.
         for (int i = 0; i < 60; i++) { // Un segundo con S desde detenido: reversa.
@@ -93,9 +93,9 @@ public class AutoTest extends TestCase {
         for (int i = 0; i < 120; i++) { // Dos segundos con A presionada.
             auto.actualizar(DT, teclas(GLFW_KEY_A)); // Dobla a la izquierda.
             maximo = Math.max(maximo, Math.abs(auto.getAnguloDireccion())); // Registra el máximo.
-            assertTrue(Math.abs(auto.getAnguloDireccion()) <= Auto.ANGULO_MAX_DIRECCION + 1e-6f); // Nunca más de 30°.
+            assertTrue(Math.abs(auto.getAnguloDireccion()) <= Rueda.ANGULO_MAX_DIRECCION + 1e-6f); // Nunca más de 30°.
         }
-        assertEquals(Auto.ANGULO_MAX_DIRECCION, maximo, 1e-5f); // Llega al tope manteniendo la tecla.
+        assertEquals(Rueda.ANGULO_MAX_DIRECCION, maximo, 1e-5f); // Llega al tope manteniendo la tecla.
         assertTrue(auto.getAnguloDireccion() > 0); // Izquierda = positivo.
         for (int i = 0; i < 120; i++) { // Dos segundos sin teclas.
             auto.actualizar(DT, NINGUNA); // Suelta la dirección.

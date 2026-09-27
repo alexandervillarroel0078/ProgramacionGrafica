@@ -2,9 +2,11 @@ package com.graphics.ciudad.trafico; // Agrupa el tráfico autónomo: vehículos
 
 import com.graphics.ciudad.mundo.Mapa; // Aporta el ancho de la calle para calcular el carril.
 import com.graphics.ciudad.motor.Cubo; // Dibuja cada pieza del vehículo.
-import com.graphics.ciudad.motor.Shader; // Activa la emisión de las luces traseras de noche.
+import com.graphics.ciudad.motor.Figuras; // Cilindros de las ruedas (los dibuja Rueda).
+import com.graphics.ciudad.motor.Shader; // Activa la emisión de las luces traseras de noche y gira las ruedas (uRotacion).
 import com.graphics.ciudad.vehiculo.Cabina; // Cabina trapezoidal compartida con el auto del jugador.
 import com.graphics.ciudad.vehiculo.LucesVehiculo; // Ubicación y colores de luces, compartidos con el auto del jugador.
+import com.graphics.ciudad.vehiculo.Rueda; // Ruedas redondas compartidas con el auto del jugador.
 import static com.graphics.ciudad.vehiculo.LucesVehiculo.ALTURA_LUZ; // Altura de las luces.
 import static com.graphics.ciudad.vehiculo.LucesVehiculo.FRENTE_LUZ; // Posición local de los faros.
 import static com.graphics.ciudad.vehiculo.LucesVehiculo.LADO_LUZ; // Separación lateral de las luces.
@@ -30,6 +32,9 @@ import java.util.function.BooleanSupplier; // Pregunta a Iluminacion si es de no
  * sigue siendo inmediata, para no abrir el giro). Con otro vehículo se mira además su trayectoria de los próximos
  * PREVISION segundos. Mientras la velocidad baja, las luces de freno se encienden con las mismas reglas que el jugador
  * (LucesVehiculo: el freno domina).
+ * RUEDAS: las mismas que el jugador (vehiculo/Rueda). Giran sobre su eje lo que el vehículo avanzó DE VERDAD en el
+ * cuadro (anguloRueda += paso / RADIO_RUEDA): si frena, giran más lento, y detenido no giran. Las delanteras doblan
+ * según el giro que el vehículo hace en ese momento (ver direccionPorGiro): en recta vuelven a 0.
  */
 public class Vehiculo {
 
@@ -73,6 +78,8 @@ public class Vehiculo {
     int siguiente; // Índice del waypoint hacia el que se dirige.
     float velocidadPermitida; // Velocidad que deja el obstáculo más cercano; cambia de a poco (frenado gradual).
     boolean frenando; // true mientras la velocidad baja (o espera detenido ante un obstáculo): luces de freno.
+    float anguloRueda; // Cuánto giró cada rueda sobre su eje, en radianes (crece al avanzar).
+    float anguloDireccion; // Giro de las ruedas delanteras respecto del vehículo (positivo = izquierda).
 
     /** Crea el vehículo con su ruta, su velocidad de crucero y su color, y lo coloca al inicio de la ruta. */
     public Vehiculo(float[][] ruta, float velocidadCrucero, float rojo, float verde, float azul, BooleanSupplier esNoche) {
@@ -136,6 +143,8 @@ public class Vehiculo {
         velocidad = velocidadCrucero; // Arranca a velocidad de crucero.
         velocidadPermitida = velocidadCrucero; // Sin obstáculos al empezar.
         frenando = false; // Sin luces de freno.
+        anguloRueda = 0; // Ruedas en su posición inicial.
+        anguloDireccion = 0; // Delanteras derechas.
     }
 
     // ==================== 3. MOVIMIENTO POR CUADRO ====================
@@ -159,7 +168,8 @@ public class Vehiculo {
         float deseado = anguloHacia(objetivoX, objetivoZ); // Orientación que apuntaría directo al punto objetivo.
         float diferencia = normalizar(deseado - angulo); // Cuánto falta girar, entre -π y π (por el lado más corto).
         float giroMaximo = VELOCIDAD_GIRO * deltaTime; // Lo máximo que puede girar en este cuadro.
-        angulo += Math.max(-giroMaximo, Math.min(giroMaximo, diferencia)); // Gira suavemente: nunca más que giroMaximo.
+        float giro = Math.max(-giroMaximo, Math.min(giroMaximo, diferencia)); // Giro de este cuadro: nunca más que giroMaximo.
+        angulo += giro; // Gira suavemente.
 
         // En recta (diferencia ≈ 0) el coseno vale 1 y circula a velocidad de crucero; en una curva cerrada frena.
         float factorCurva = Math.max(FRACCION_MINIMA_CURVA, (float) Math.cos(diferencia)); // Nunca baja del mínimo.
@@ -198,6 +208,26 @@ public class Vehiculo {
         float frenteZ = -(float) Math.cos(angulo); // Obtiene la componente Z; con ángulo cero vale -1.
         x += frenteX * paso; // Avanza en X lo permitido en este cuadro.
         z += frenteZ * paso; // Avanza en Z lo permitido en este cuadro.
+
+        // Ruedas: giran lo que avanzó de verdad (paso, ya recortado por el obstáculo; 0 si está detenido) y las
+        // delanteras se acercan, sin saltos, al ángulo que corresponde al giro de este cuadro. En pausa no cambian.
+        anguloRueda += Rueda.giroPorDistancia(paso); // Ángulo = distancia / radio.
+        if (deltaTime > 0) { // Con el tiempo detenido no hay giro que medir.
+            float objetivoDireccion = direccionPorGiro(giro / deltaTime, velocidad); // Según el giro actual.
+            anguloDireccion = Rueda.acercarDireccion(anguloDireccion, objetivoDireccion, deltaTime); // Tope ±30°.
+        }
+    }
+
+    /**
+     * Ángulo de las ruedas delanteras que produce un giro de "velocidadAngular" rad/s yendo a "velocidad" u/s, según el
+     * MODELO DE BICICLETA: un auto con distancia entre ejes L y ruedas delanteras dobladas δ recorre un círculo de radio
+     * R = L / tan δ; como velocidad = velocidadAngular · R, despejando queda tan δ = L · velocidadAngular / velocidad.
+     * atan2 evita dividir por cero: detenido y girando da ±90°, que el tope deja en ±ANGULO_MAX_DIRECCION. En recta
+     * (velocidadAngular = 0) da 0, y las ruedas vuelven al centro. Positivo = izquierda, igual que el ángulo del vehículo.
+     */
+    static float direccionPorGiro(float velocidadAngular, float velocidad) {
+        float delta = (float) Math.atan2(Rueda.DISTANCIA_EJES * velocidadAngular, Math.abs(velocidad)); // tan δ = L · ω / v.
+        return Math.max(-Rueda.ANGULO_MAX_DIRECCION, Math.min(Rueda.ANGULO_MAX_DIRECCION, delta)); // Nunca más de 30°.
     }
 
     /**
@@ -308,17 +338,11 @@ public class Vehiculo {
         return new float[] {mundoX, ALTURA_LUZ, mundoZ}; // Punto desde donde nace el haz.
     }
 
-    /** Construye el vehículo con cajas, en el mismo estilo que Auto pero con su propio color. */
-    public void dibujar(Cubo cubo, Shader shader, Cabina cabina) {
+    /** Construye el vehículo en el mismo estilo que Auto (carrocería, cabina, ruedas redondas y luces), con su color. */
+    public void dibujar(Cubo cubo, Figuras figuras, Shader shader, Cabina cabina) {
         pieza(cubo, 0, 0.65f, 0, 1.65f, 0.55f, 2.6f, rojo, verde, azul); // Dibuja la carrocería con el color del vehículo.
         cabina.dibujar(x, z, angulo, rojo, verde, azul); // La misma cabina que el jugador, con el color de este vehículo.
-        float[] ladosRuedas = {-0.88f, 0.88f}; // Ubica ruedas a izquierda y derecha.
-        float[] ejesRuedas = {-0.82f, 0.82f}; // Ubica las ruedas delanteras y traseras.
-        for (float ladoX : ladosRuedas) { // Selecciona uno de los dos lados del vehículo.
-            for (float ejeZ : ejesRuedas) { // Selecciona el eje delantero o trasero.
-                pieza(cubo, ladoX, 0.38f, ejeZ, 0.24f, 0.58f, 0.6f, 0.055f, 0.065f, 0.08f); // Dibuja una rueda oscura.
-            }
-        }
+        Rueda.dibujarCuatro(cubo, figuras, shader, x, z, angulo, anguloRueda, anguloDireccion); // Las mismas ruedas que el jugador.
         float[] ladosLuces = {-LADO_LUZ, LADO_LUZ}; // Define la separación lateral de las luces.
         boolean encendidas = lucesEncendidas(); // Se consulta una vez por dibujo: de noche encendidas, de día apagadas.
         float[] faro = LucesVehiculo.colorFaro(encendidas); // Blanco emisivo encendido o gris oscuro apagado.
@@ -363,6 +387,16 @@ public class Vehiculo {
     /** Devuelve la velocidad actual en unidades por segundo. */
     public float getVelocidad() {
         return velocidad; // Velocidad actual.
+    }
+
+    /** Ángulo girado por las ruedas sobre su eje, en radianes. */
+    public float getAnguloRueda() {
+        return anguloRueda; // Crece con la distancia recorrida.
+    }
+
+    /** Giro actual de las ruedas delanteras, en radianes (positivo = izquierda). */
+    public float getAnguloDireccion() {
+        return anguloDireccion; // Entre -ANGULO_MAX_DIRECCION y ANGULO_MAX_DIRECCION.
     }
 
     /** Indica si las luces de freno están encendidas: la velocidad baja o espera detenido ante un obstáculo. */

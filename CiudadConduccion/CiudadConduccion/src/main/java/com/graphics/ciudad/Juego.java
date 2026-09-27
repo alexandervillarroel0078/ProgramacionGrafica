@@ -293,7 +293,7 @@ public class Juego {
         if (camara.esAerea() && !minimapa.enVistaMapa()) { // Desde arriba el auto se ve chico: se marca con una flecha.
             indicador.dibujar(auto.getX(), auto.getZ(), relojGlobal); // En la cámara de seguimiento no hace falta.
         }
-        trafico.dibujar(cabina); // Añade los vehículos autónomos (con sus luces según día/noche); también aparecen en el minimapa.
+        trafico.dibujar(figuras, cabina); // Añade los vehículos autónomos (con sus luces según día/noche); también aparecen en el minimapa.
         iluminacion.dibujarFarolas(); // Añade las farolas: base, poste, brazo curvo, pantalla y bombilla.
         if (!minimapa.enVistaMapa()) { // Los detalles pequeños solo son necesarios en la vista principal.
             decoracion.dibujar(iluminacion.esNoche(), relojGlobal); // Añade árboles, bancos, ventanas y señalización urbana.

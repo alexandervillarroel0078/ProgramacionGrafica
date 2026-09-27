@@ -22,7 +22,10 @@ public final class Mapa {
 
     // Ciudad de 11 × 11 celdas: las filas y columnas pares son calles continuas, así todas quedan conectadas;
     // las celdas con fila y columna impares son las 25 manzanas (19 edificios y 6 parques).
-    public static final int[][] MAPA = { // Matriz: 0 = calle, 1 = edificio, 2 = parque.
+    // Para cambiar la ciudad se reemplazan las FILAS {…} de abajo (ENTREGA.md trae un 13 × 13 listo para pegar).
+    // elegirMapa() devuelve esta misma matriz, salvo que se ejecute con -Dciudad.mapa (ver PROPIEDAD_MAPA).
+    // Regla de la salida: la celda {MAPA.length - 2, 1}, junto a la salida del auto, no puede ser parque (ver MapaTest).
+    public static final int[][] MAPA = elegirMapa(new int[][] { // Matriz: 0 = calle, 1 = edificio, 2 = parque.
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // Fila norte: calle continua.
         {0, 1, 0, 1, 0, 2, 0, 1, 0, 1, 0}, // Primera fila de manzanas, separadas por calles; parque al centro.
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // Segunda avenida horizontal.
@@ -34,7 +37,29 @@ public final class Mapa {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // Quinta avenida horizontal.
         {0, 1, 0, 1, 0, 1, 0, 2, 0, 1, 0}, // Última fila de manzanas.
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} // Calle del borde sur.
-    };
+    });
+
+    // ==================== MAPA ALTERNATIVO PARA PRUEBAS (opcional) ====================
+    // Con -Dciudad.mapa=paquete.Clase#CAMPO, MAPA se toma de ese campo estático int[][] en vez de la matriz de arriba.
+    // pom.xml corre todas las pruebas una segunda vez con com.graphics.ciudad.mundo.MapasDePrueba#MAPA_13 (en src/test):
+    // así la ciudad 13 × 13 se prueba siempre con el mismo mapa y sin editar este archivo. Sin la propiedad (el juego
+    // normal y la primera pasada de pruebas), MAPA es la matriz 11 × 11.
+    public static final String PROPIEDAD_MAPA = "ciudad.mapa";
+
+    /** La matriz escrita en MAPA, o la que indique la propiedad PROPIEDAD_MAPA ("paquete.Clase#CAMPO"). */
+    static int[][] elegirMapa(int[][] escrita) {
+        String origen = System.getProperty(PROPIEDAD_MAPA); // Por ejemplo "com.graphics.ciudad.mundo.MapasDePrueba#MAPA_13".
+        if (origen == null || origen.isEmpty()) {
+            return escrita; // Caso normal.
+        }
+        int numeral = origen.indexOf('#'); // Separa la clase del campo.
+        try {
+            Class<?> clase = Class.forName(origen.substring(0, numeral)); // La clase debe estar en el classpath.
+            return (int[][]) clase.getField(origen.substring(numeral + 1)).get(null); // Campo estático público.
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            throw new IllegalStateException(PROPIEDAD_MAPA + "=" + origen + " no es un campo int[][] público y estático", e);
+        }
+    }
 
     public static final float TAM_CELDA = 10; // Ancho y profundidad de cada celda del mapa.
     public static final float TAMANO = MAPA.length * TAM_CELDA; // Lado completo de la ciudad: 11 celdas × 10 = 110 unidades.

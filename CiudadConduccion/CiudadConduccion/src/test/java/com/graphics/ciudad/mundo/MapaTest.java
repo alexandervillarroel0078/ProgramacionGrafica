@@ -2,7 +2,12 @@ package com.graphics.ciudad.mundo; // Prueba el plano de la ciudad desde su mism
 
 import com.graphics.ciudad.juego.Entregas; // Aporta las posiciones de las paradas.
 import com.graphics.ciudad.vehiculo.Auto; // Aporta la posición inicial del vehículo.
+import java.nio.charset.StandardCharsets; // ENTREGA.md está en UTF-8.
+import java.nio.file.Files; // Lee ENTREGA.md para compararlo con MAPA_13.
+import java.nio.file.Paths; // Ruta de ENTREGA.md (surefire corre en la carpeta del pom).
 import java.util.ArrayDeque; // Cola de celdas pendientes para el recorrido en anchura (BFS).
+import java.util.ArrayList; // Filas leídas de ENTREGA.md.
+import java.util.List; // Tipo de esa lista.
 import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usadas por Maven.
 
 /** Comprueba el tamaño, el contenido y la conectividad del mapa sin abrir una ventana OpenGL. */
@@ -162,5 +167,83 @@ public class MapaTest extends TestCase {
         // Las farolas ya no van en la calle sino en la vereda: su ubicación se prueba en iluminacion/FarolasTest.
         assertTrue(Mapa.esCalleEn(Auto.X_INICIAL, Auto.Z_INICIAL)); // El auto debe comenzar sobre calle.
         assertEquals(Entregas.DESTINOS.length, Entregas.NOMBRES_DESTINOS.length); // Cada parada tiene su nombre para el título.
+    }
+
+    // ==================== MAPA 13 × 13 DE REFERENCIA Y REGLA DE LA SALIDA ====================
+
+    /**
+     * REGLA DE LA SALIDA: la manzana {FILA_SALIDA, COLUMNA_SALIDA + 1} (la que queda a la derecha del auto al salir;
+     * {9, 1} en 11 × 11 y {11, 1} en 13 × 13) NO puede ser parque. Motivo: Decoracion pone un paso peatonal en la calle
+     * al oeste de cada parque, pegado al cruce del sur; para esa manzana, ese paso cae en la calle de la salida a 3 del
+     * auto (del centro del cruce al del paso hay 5 + 0.5 + 1.5 = 7, y la salida está a 10 del cruce), y el paso (3 de
+     * largo) se superpone con el auto (3.2 de largo). La prueba calcula ese paso y comprueba que sí taparía la salida,
+     * así que la regla hace falta, y después verifica que el mapa activo y MAPA_13 la cumplan.
+     */
+    public void testSinParqueJuntoALaSalida() {
+        float[] paso = Decoracion.pasoEnAcceso(Auto.FILA_SALIDA + 1, Auto.COLUMNA_SALIDA, -1, 0); // El que traería ese parque.
+        assertEquals(Auto.X_INICIAL - Auto.CARRIL_SALIDA, paso[0], 1e-4f); // En la calle de la salida.
+        float mitadAuto = 1.6f; // Medio largo del auto (≈ 3.2).
+        assertTrue("el paso no taparía la salida: la regla sobraría",
+            Math.abs(paso[1] - Auto.Z_INICIAL) < Decoracion.LARGO_PASO / 2 + mitadAuto);
+        assertTrue("parque junto a la salida", Mapa.tipo(Auto.FILA_SALIDA, Auto.COLUMNA_SALIDA + 1) != Mapa.PARQUE);
+        int[][] m = MapasDePrueba.MAPA_13; // La misma regla, sobre el mapa de referencia aunque no esté activo.
+        assertTrue("parque junto a la salida en MAPA_13", m[m.length - 2][Auto.COLUMNA_SALIDA + 1] != Mapa.PARQUE);
+    }
+
+    /** MAPA_13 es una ciudad válida: 13 × 13, calles en filas y columnas pares, al menos 12 edificios y 4 parques. */
+    public void testMapaDeReferencia13() {
+        int[][] m = MapasDePrueba.MAPA_13;
+        assertEquals(13, m.length);
+        int edificios = 0;
+        int parques = 0;
+        for (int f = 0; f < m.length; f++) {
+            assertEquals(13, m[f].length); // Cuadrado.
+            for (int c = 0; c < m.length; c++) {
+                boolean calle = f % 2 == 0 || c % 2 == 0; // Filas y columnas pares: calles continuas y conectadas.
+                assertEquals(f + "," + c, calle, m[f][c] == Mapa.CALLE);
+                edificios += m[f][c] == Mapa.EDIFICIO ? 1 : 0;
+                parques += m[f][c] == Mapa.PARQUE ? 1 : 0;
+            }
+        }
+        assertTrue("edificios=" + edificios, edificios >= 12);
+        assertTrue("parques=" + parques, parques >= 4);
+    }
+
+    /**
+     * Con -Dciudad.mapa (segunda pasada de pom.xml) MAPA es el mismo arreglo MAPA_13; sin la propiedad, es la matriz
+     * escrita en Mapa.java (11 × 11, o el 13 × 13 si se pegó en la defensa), nunca la constante de prueba.
+     */
+    public void testPropiedadEligeElMapa() {
+        String origen = System.getProperty(Mapa.PROPIEDAD_MAPA);
+        if (MapasDePrueba.PROPIEDAD_13.equals(origen)) {
+            assertSame(MapasDePrueba.MAPA_13, Mapa.MAPA);
+        } else {
+            assertTrue("propiedad inesperada: " + origen, origen == null || origen.isEmpty());
+            assertNotSame(MapasDePrueba.MAPA_13, Mapa.MAPA);
+        }
+    }
+
+    /** El bloque para pegar de ENTREGA.md tiene exactamente las filas de MAPA_13 (la defensa usa ese mismo mapa). */
+    public void testEntregaTraeElMismoMapa13() throws Exception {
+        List<int[]> filas = new ArrayList<>();
+        for (String linea : Files.readAllLines(Paths.get("ENTREGA.md"), StandardCharsets.UTF_8)) {
+            String t = linea.trim();
+            if (!t.startsWith("{") || t.indexOf('}') < 0) {
+                continue; // No es una fila de matriz.
+            }
+            String[] numeros = t.substring(1, t.indexOf('}')).split(",");
+            if (numeros.length != 13) {
+                continue; // Otra matriz.
+            }
+            int[] fila = new int[13];
+            for (int i = 0; i < 13; i++) {
+                fila[i] = Integer.parseInt(numeros[i].trim());
+            }
+            filas.add(fila);
+        }
+        assertEquals("filas de 13 en ENTREGA.md", 13, filas.size());
+        for (int f = 0; f < 13; f++) {
+            assertTrue("fila " + f, java.util.Arrays.equals(MapasDePrueba.MAPA_13[f], filas.get(f)));
+        }
     }
 }

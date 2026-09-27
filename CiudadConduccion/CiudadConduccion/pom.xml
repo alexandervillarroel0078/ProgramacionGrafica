@@ -10,6 +10,8 @@
     <!-- Misma versión que los ejemplos originales. -->
     <lwjgl.version>3.3.3</lwjgl.version>
     <mainClass>com.graphics.ciudad.Main</mainClass>
+    <!-- Vacío = Mapa.MAPA (11 × 11). Ver Mapa.PROPIEDAD_MAPA y la sección "Mapa 13 × 13 de referencia" de ENTREGA.md. -->
+    <ciudad.mapa></ciudad.mapa>
   </properties>
   <dependencies>
     <!-- Bindings Java y bibliotecas nativas. LWJGL selecciona las de la plataforma actual. -->
@@ -42,10 +44,22 @@
   </dependencies>
   <build><plugins>
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
+    <!-- mvn test corre las pruebas dos veces: con Mapa.MAPA (11 × 11) y con el 13 × 13 de referencia
+         (MapasDePrueba.MAPA_13, elegido con -Dciudad.mapa). Cada pasada usa su propia JVM, así Mapa se carga de nuevo. -->
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version>
+      <executions>
+        <execution><id>pruebas-mapa-13</id><phase>test</phase><goals><goal>test</goal></goals>
+          <configuration>
+            <systemPropertyVariables><ciudad.mapa>com.graphics.ciudad.mundo.MapasDePrueba#MAPA_13</ciudad.mapa></systemPropertyVariables>
+            <reportsDirectory>${project.build.directory}/surefire-reports-mapa-13</reportsDirectory>
+          </configuration>
+        </execution>
+      </executions>
+    </plugin>
     <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.1.0</version>
       <configuration>
         <executable>${java.home}/bin/java</executable>
-        <arguments><argument>-classpath</argument><classpath/><argument>${mainClass}</argument></arguments>
+        <arguments><argument>-Dciudad.mapa=${ciudad.mapa}</argument><argument>-classpath</argument><classpath/><argument>${mainClass}</argument></arguments>
       </configuration>
     </plugin>
   </plugins></build>
@@ -53,7 +67,7 @@
   <profiles><profile><id>macos</id><activation><os><family>mac</family></os></activation>
     <build><plugins><plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId>
       <configuration><arguments combine.self="override">
-        <argument>-XstartOnFirstThread</argument><argument>-classpath</argument><classpath/>
+        <argument>-XstartOnFirstThread</argument><argument>-Dciudad.mapa=${ciudad.mapa}</argument><argument>-classpath</argument><classpath/>
         <argument>${mainClass}</argument>
       </arguments></configuration>
     </plugin></plugins></build>
