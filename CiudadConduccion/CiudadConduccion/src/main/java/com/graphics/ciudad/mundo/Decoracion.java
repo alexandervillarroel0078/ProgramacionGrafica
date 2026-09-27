@@ -18,26 +18,29 @@ import java.util.List; // Tipo de la lista de ubicaciones.
  * Iluminacion y el reloj global de Juego (los semáforos siguen ciclando aunque la partida termine).
  *
  * PASOS PEATONALES: van donde el peatón realmente cruza y el conductor espera encontrarlo:
- *  - en CADA acceso de las intersecciones con semáforo (Senalizacion.INTERSECCIONES_SEMAFORO): el semáforo detiene
- *    a los autos y da tiempo a cruzar; el cabezal está justo al borde de estas franjas, donde el auto frena;
+ *  - en CADA acceso de los cruces CONTROLADOS: los que tienen semáforo (Senalizacion.INTERSECCIONES_SEMAFORO) y los
+ *    que tienen PARE (Senalizacion.UBICACIONES_PARE). Ahí el auto se detiene, así que el peatón cruza seguro; el
+ *    semáforo y el PARE están justo detrás de las franjas, donde el auto frena;
  *  - junto a cada parque: en la calle vecina al norte y en la vecina al oeste, pegados al cruce siguiente, porque
  *    los parques atraen peatones.
- * Cada paso ocupa la celda de calle vecina a la intersección, pegado al borde del cruce (sin invadirlo), mide
- * LARGO_PASO en el sentido de circulación y cubre la calle completa de vereda a vereda. Hay pasos en calles norte-sur y
- * este-oeste. Las franjas son paralelas al sentido de circulación (senda de cebra) y Ciudad corta la línea amarilla
- * donde hay un paso.
+ * Cada paso ocupa la celda de calle vecina a la intersección, a SEPARACION_CRUCE del borde del cruce (como en la vida
+ * real: la esquina queda libre para doblar y el peatón cruza un poco antes), mide LARGO_PASO en el sentido de
+ * circulación (corto) y cruza la calle en perpendicular, de vereda a vereda. Hay pasos en calles norte-sur y este-oeste.
+ * Las franjas son paralelas al sentido de circulación (senda de cebra) y Ciudad corta la línea amarilla donde hay un
+ * paso. Todo sale del Mapa: con 13 × 13 los cruces controlados y sus pasos se recalculan solos.
  */
 public class Decoracion {
 
     // ==================== PASOS PEATONALES (valores ajustables) ====================
     public static final float LARGO_PASO = 3; // Largo del paso en el sentido de circulación: es el largo de cada franja.
+    public static final float SEPARACION_CRUCE = 0.5f; // Asfalto libre entre el borde del cruce y el paso: no tapa la esquina.
     public static final int FRANJAS_PASO = 6; // Franjas blancas por paso.
     public static final float SEPARACION_FRANJAS = 1.65f; // Distancia entre centros de franjas vecinas (uniforme).
     public static final float ANCHO_FRANJA = 0.9f; // Ancho de cada franja; 5 · 1.65 + 0.9 = 9.15 de los 10 de la calle: de vereda a vereda.
     public static final float ALTURA_FRANJA = 0.03f; // Centro de la pintura: la franja va de 0.02 a 0.04, apenas sobre el asfalto (Y = 0).
     public static final float GROSOR_FRANJA = 0.02f; // Espesor de la pintura; separada del asfalto para evitar z-fighting.
     // Cada ubicación es {centroX, centroZ, ejeX}: ejeX = 1 si la calle va de oeste a este (franjas a lo largo de X),
-    // 0 si va de norte a sur (franjas a lo largo de Z). Se genera desde INTERSECCIONES_SEMAFORO y la lista de parques.
+    // 0 si va de norte a sur (franjas a lo largo de Z). Se genera desde los cruces controlados y la lista de parques.
     public static final List<float[]> UBICACIONES_PASOS = Collections.unmodifiableList(calcularUbicaciones());
 
     private final Cubo cubo; // Geometría con la que se construyen los detalles.
@@ -55,10 +58,10 @@ public class Decoracion {
 
     // ==================== UBICACIÓN DE LOS PASOS PEATONALES ====================
 
-    /** Genera los pasos: uno por acceso de cada cruce con semáforo y hasta dos junto a cada parque, sin repetir. */
+    /** Genera los pasos: uno por acceso de cada cruce controlado y hasta dos junto a cada parque, sin repetir. */
     private static List<float[]> calcularUbicaciones() {
         List<float[]> pasos = new ArrayList<>(); // Ubicaciones encontradas.
-        for (int[] cruce : Senalizacion.INTERSECCIONES_SEMAFORO) { // Cruces con semáforo (Centro).
+        for (int[] cruce : crucesControlados()) { // Cruces con semáforo o con PARE.
             for (int[] acceso : Mapa.accesos(cruce[0], cruce[1])) { // Cada calle que llega.
                 agregarSinRepetir(pasos, pasoEnAcceso(cruce[0], cruce[1], acceso[0], acceso[1])); // Paso en ese acceso.
             }
@@ -78,9 +81,27 @@ public class Decoracion {
         return pasos; // Lista completa de pasos.
     }
 
-    /** Paso {x, z, ejeX} en el acceso {dFila, dColumna} de un cruce: en la celda vecina, pegado al borde del cruce. */
+    /**
+     * Cruces {fila, columna} con semáforo o con PARE, sin repetir: los semáforos del Centro y las intersecciones de
+     * UBICACIONES_PARE (una intersección aparece una sola vez aunque tenga más de un PARE).
+     */
+    public static List<int[]> crucesControlados() {
+        List<int[]> cruces = new ArrayList<>(Senalizacion.INTERSECCIONES_SEMAFORO); // Primero los de semáforo.
+        for (int[] pare : Senalizacion.UBICACIONES_PARE) { // {fila, columna, dFila, dColumna}.
+            boolean repetido = false;
+            for (int[] c : cruces) {
+                repetido |= c[0] == pare[0] && c[1] == pare[1]; // Mismo cruce.
+            }
+            if (!repetido) {
+                cruces.add(new int[] {pare[0], pare[1]});
+            }
+        }
+        return cruces;
+    }
+
+    /** Paso {x, z, ejeX} en el acceso {dFila, dColumna} de un cruce: en la celda vecina, a SEPARACION_CRUCE del cruce. */
     public static float[] pasoEnAcceso(int fila, int columna, int dFila, int dColumna) {
-        float distancia = Mapa.TAM_CELDA / 2 + LARGO_PASO / 2; // Del centro del cruce al centro del paso: 5 + 1.5.
+        float distancia = Mapa.TAM_CELDA / 2 + SEPARACION_CRUCE + LARGO_PASO / 2; // Del centro del cruce al del paso: 5 + 0.5 + 1.5.
         float x = Mapa.centro(columna) + dColumna * distancia; // Se aleja del cruce por la calle del acceso (columnas = X).
         float z = Mapa.centro(fila) + dFila * distancia; // Igual en Z (filas = Z).
         float ejeX = dColumna != 0 ? 1 : 0; // Si el acceso cambia de columna, la calle va de oeste a este.

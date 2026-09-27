@@ -50,9 +50,14 @@ public class Edificio {
     public static final float ALTO_MINIMO_BASE = 3.2f; // El volumen de abajo necesita esto para la puerta, las vidrieras y el toldo.
 
     // ==================== 3. ALTURAS Y MEDIDAS POR TIPO (valores ajustables) ====================
-    // Las alturas son de pared (sin losa ni techo), medidas desde la acera, y se sortean enteras entre MIN y MAX.
-    public static final int ALTURA_TORRE_MIN = 16; // Torre: la más alta de la ciudad.
-    public static final int ALTURA_TORRE_MAX = 22;
+    // ESCALA: 1 unidad ≈ 1 metro (el auto mide 1.4 de alto, como uno real). Un piso real mide ≈ 3 m, así que las
+    // alturas se cuentan en PISOS: la planta baja comercial (ALTO_MINIMO_BASE = 3.2) y encima pisos de ALTO_PISO.
+    // alturaPared(pisos) = planta baja + (pisos − 1) · ALTO_PISO, medida desde la acera, sin losa ni techo.
+    // Así las filas de ventanas de Fachada (una por piso) coinciden siempre con los pisos del edificio.
+    // Orden de alturas: casa (2 pisos) < doble baja (2-3) < bloque y escalonado (4-6) < doble alta (5-7) < torre (8-11).
+    public static final float ALTO_PISO = 3.0f; // Alto de cada piso sobre la planta baja: una persona de 1.7 entra con holgura.
+    public static final int PISOS_TORRE_MIN = 8; // Torre: la más alta de la ciudad (24.2 a 33.2 de pared).
+    public static final int PISOS_TORRE_MAX = 11;
     public static final float ANCHO_TORRE = 4.4f; // Lado de la torre: angosta sobre el podio de 7.
     public static final float ALTURA_PODIO = ALTO_MINIMO_BASE; // Podio comercial de la torre: solo la planta baja.
     public static final float ALTO_ANTENA = 3.5f; // Antena: mástil fino sobre la azotea.
@@ -62,8 +67,8 @@ public class Edificio {
     public static final float ALTO_PATAS = 0.8f;
     public static final float PROBABILIDAD_ANTENA = 0.5f; // Fracción de torres con antena (el resto, con tanque).
 
-    public static final int ALTURA_BLOQUE_MIN = 7; // Bloque: altura media.
-    public static final int ALTURA_BLOQUE_MAX = 11;
+    public static final int PISOS_BLOQUE_MIN = 4; // Bloque: altura media (12.2 a 18.2).
+    public static final int PISOS_BLOQUE_MAX = 6;
     public static final float ALTO_BARANDA = 0.5f; // Baranda de la azotea, en todo el borde.
     public static final float GROSOR_BARANDA = 0.1f;
     public static final float ANCHO_ASCENSOR = 2.0f; // Caja de ascensor sobre la azotea.
@@ -73,22 +78,25 @@ public class Edificio {
     public static final float[] ANCHOS_NIVELES = {Mapa.ANCHO_EDIFICIO, 5.2f, 3.6f}; // Escalonado: lado de cada nivel.
     public static final int NIVELES_MIN = 2; // Escalonado: 2 o 3 niveles.
     public static final int NIVELES_MAX = 3;
-    public static final int ALTURA_NIVEL_MIN = 4; // Alto de cada nivel (el de abajo, al menos ALTO_MINIMO_BASE).
-    public static final int ALTURA_NIVEL_MAX = 5;
+    public static final int PISOS_PRIMER_NIVEL_MIN = 2; // El nivel de abajo (con la planta baja) tiene 2 o 3 pisos...
+    public static final int PISOS_PRIMER_NIVEL_MAX = 3;
+    public static final int PISOS_POR_NIVEL = 2; // ...y cada escalón de arriba, 2: en total 4 a 7 pisos (12.2 a 21.2).
 
-    public static final int PISOS_CASA_MIN = 1; // Casa baja: 1 o 2 pisos.
+    // Casa baja: siempre 2 pisos. Con 1 solo piso, la planta baja es toda negocio (vidrieras y toldo) y no quedaba
+    // lugar para ninguna ventana: el edificio (5,1) no tenía ventanas. Con el piso de arriba, todas las casas las tienen.
+    public static final int PISOS_CASA_MIN = 2;
     public static final int PISOS_CASA_MAX = 2;
     public static final float ALTO_PLANTA_CASA = ALTO_MINIMO_BASE; // Planta baja de la casa (negocio con toldo).
-    public static final float ALTO_PISO_CASA = 2.0f; // Cada piso de más.
+    public static final float ALTO_PISO_CASA = ALTO_PISO; // Cada piso de más: el mismo que en los demás edificios.
     public static final float ALTO_TECHO_CASA = 2.0f; // Del alero a la cumbrera del techo a dos aguas.
     public static final float LADO_CHIMENEA = 0.5f; // Chimenea que asoma del techo.
     public static final float ALTO_CHIMENEA = 1.8f;
 
     public static final float ANCHO_PARTE_ALTA = 4.0f; // Doble: la parte alta ocupa 4 de los 7; la baja, los otros 3.
-    public static final int ALTURA_DOBLE_ALTA_MIN = 9;
-    public static final int ALTURA_DOBLE_ALTA_MAX = 13;
-    public static final int ALTURA_DOBLE_BAJA_MIN = 4;
-    public static final int ALTURA_DOBLE_BAJA_MAX = 6;
+    public static final int PISOS_DOBLE_ALTA_MIN = 5; // Parte alta: 15.2 a 21.2, siempre más baja que la torre más baja.
+    public static final int PISOS_DOBLE_ALTA_MAX = 7;
+    public static final int PISOS_DOBLE_BAJA_MIN = 2; // Parte baja: 6.2 a 9.2.
+    public static final int PISOS_DOBLE_BAJA_MAX = 3;
 
     // Semillas de Variacion: cada decisión usa la suya para que no dependan entre sí.
     private static final int SEMILLA_TIPO = 167; // Elegida para que en este MAPA los cinco tipos salgan parejos (4, 4, 4, 4 y 3).
@@ -156,6 +164,39 @@ public class Edificio {
 
     // ==================== 5. DECISIONES DETERMINÍSTICAS ====================
 
+    /** Alto de pared de un edificio de "pisos" pisos: planta baja comercial más los pisos de arriba. */
+    public static float alturaPared(int pisos) {
+        return ALTO_MINIMO_BASE + (pisos - 1) * ALTO_PISO; // 1 piso = 3.2; cada piso más suma 3.
+    }
+
+    /** Punto más alto del edificio de la celda (Y del mundo), contando losa, techo, antena o tanque. */
+    public static float alturaTotal(int fila, int columna) {
+        float tope = 0; // Máximo encontrado.
+        for (Pieza p : piezas(fila, columna)) { // Paredes y techos.
+            tope = Math.max(tope, p.y + p.sy / 2); // Borde superior de la pieza.
+        }
+        return tope;
+    }
+
+    /**
+     * Punto más alto de TODA la ciudad. Lo usan el minimapa (sus marcas van por encima: si no, las torres las taparían)
+     * y la cámara aérea (no baja dentro de un edificio). Se calcula del mapa: con otro MAPA se actualiza solo.
+     */
+    public static final float ALTURA_MAXIMA = calcularAlturaMaxima();
+
+    /** Recorre los edificios del mapa y devuelve el más alto. */
+    private static float calcularAlturaMaxima() {
+        float maximo = 0;
+        for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
+            for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                if (Mapa.tipo(fila, columna) == Mapa.EDIFICIO) { // Solo manzanas con edificio.
+                    maximo = Math.max(maximo, alturaTotal(fila, columna));
+                }
+            }
+        }
+        return maximo;
+    }
+
     /** Entero entre minimo y maximo (incluidos), sorteado con Variacion para esta celda. */
     private static int entero(int fila, int columna, int semilla, int minimo, int maximo) {
         return minimo + (int) (Variacion.valor(fila, columna, 0, semilla) * (maximo - minimo + 1)); // Partes iguales.
@@ -202,14 +243,14 @@ public class Edificio {
         List<Volumen> lista = new ArrayList<>(); // Resultado.
         switch (tipo(fila, columna)) {
             case TORRE: { // Podio de 7 × 7 con el negocio y, encima, la torre angosta.
-                float tope = ALTURA_ACERA + entero(fila, columna, SEMILLA_ALTURA, ALTURA_TORRE_MIN, ALTURA_TORRE_MAX);
+                float tope = ALTURA_ACERA + alturaPared(entero(fila, columna, SEMILLA_ALTURA, PISOS_TORRE_MIN, PISOS_TORRE_MAX));
                 float podio = ALTURA_ACERA + ALTURA_PODIO; // Tope del podio.
                 lista.add(new Volumen(x, z, ancho, ancho, ALTURA_ACERA, podio, pared)); // Podio.
                 lista.add(new Volumen(x, z, ANCHO_TORRE, ANCHO_TORRE, podio, tope, pared)); // Torre.
                 break;
             }
             case BLOQUE: { // Una sola caja de altura media.
-                float tope = ALTURA_ACERA + entero(fila, columna, SEMILLA_ALTURA, ALTURA_BLOQUE_MIN, ALTURA_BLOQUE_MAX);
+                float tope = ALTURA_ACERA + alturaPared(entero(fila, columna, SEMILLA_ALTURA, PISOS_BLOQUE_MIN, PISOS_BLOQUE_MAX));
                 lista.add(new Volumen(x, z, ancho, ancho, ALTURA_ACERA, tope, pared)); // Bloque.
                 break;
             }
@@ -217,8 +258,10 @@ public class Edificio {
                 int niveles = entero(fila, columna, SEMILLA_FORMA, NIVELES_MIN, NIVELES_MAX); // 2 o 3.
                 float base = ALTURA_ACERA; // El primer nivel arranca en la acera.
                 for (int nivel = 0; nivel < niveles; nivel++) { // De abajo hacia arriba.
-                    float alto = ALTURA_NIVEL_MIN + (int) (Variacion.valor(fila, columna, nivel, SEMILLA_ALTURA)
-                        * (ALTURA_NIVEL_MAX - ALTURA_NIVEL_MIN + 1)); // Alto de este nivel.
+                    // El primer nivel lleva la planta baja y 2 o 3 pisos; los demás, PISOS_POR_NIVEL pisos completos.
+                    int pisosPrimero = PISOS_PRIMER_NIVEL_MIN + (int) (Variacion.valor(fila, columna, nivel, SEMILLA_ALTURA)
+                        * (PISOS_PRIMER_NIVEL_MAX - PISOS_PRIMER_NIVEL_MIN + 1)); // Sorteado por edificio.
+                    float alto = nivel == 0 ? alturaPared(pisosPrimero) : PISOS_POR_NIVEL * ALTO_PISO; // Alto de este nivel.
                     float lado = ANCHOS_NIVELES[nivel]; // 7, 5.2 y 3.6.
                     lista.add(new Volumen(x, z, lado, lado, base, base + alto, pared)); // Nivel centrado.
                     base += alto; // El siguiente empieza en el tope de este (atraviesa su losa).
@@ -227,15 +270,15 @@ public class Edificio {
             }
             case CASA_BAJA: { // Uno o dos pisos; el techo es una pieza aparte.
                 int pisos = PISOS_CASA_MIN + (int) (Variacion.valor(fila, columna, 2, SEMILLA_FORMA)
-                    * (PISOS_CASA_MAX - PISOS_CASA_MIN + 1)); // 1 o 2 (índice 2: independiente de los niveles del escalonado).
+                    * (PISOS_CASA_MAX - PISOS_CASA_MIN + 1)); // Hoy siempre 2 (índice 2: independiente de los niveles del escalonado).
                 float tope = ALTURA_ACERA + ALTO_PLANTA_CASA + (pisos - 1) * ALTO_PISO_CASA; // Alero.
                 lista.add(new Volumen(x, z, ancho, ancho, ALTURA_ACERA, tope, pared)); // Paredes de la casa.
                 break;
             }
             case DOBLE: { // La manzana se parte en dos: una parte alta de 4 y una baja de 3, pegadas.
                 float[] paredBaja = PALETA_FACHADAS[colorParedSecundario(fila, columna)]; // Otro color.
-                float topeAlto = ALTURA_ACERA + entero(fila, columna, SEMILLA_ALTURA, ALTURA_DOBLE_ALTA_MIN, ALTURA_DOBLE_ALTA_MAX);
-                float topeBajo = ALTURA_ACERA + entero(fila, columna, SEMILLA_FORMA, ALTURA_DOBLE_BAJA_MIN, ALTURA_DOBLE_BAJA_MAX);
+                float topeAlto = ALTURA_ACERA + alturaPared(entero(fila, columna, SEMILLA_ALTURA, PISOS_DOBLE_ALTA_MIN, PISOS_DOBLE_ALTA_MAX));
+                float topeBajo = ALTURA_ACERA + alturaPared(entero(fila, columna, SEMILLA_FORMA, PISOS_DOBLE_BAJA_MIN, PISOS_DOBLE_BAJA_MAX));
                 float anchoBajo = ancho - ANCHO_PARTE_ALTA; // 3.
                 int s = lado(fila, columna, 0); // De qué lado queda la parte alta.
                 float centroAlto = s * (ancho - ANCHO_PARTE_ALTA) / 2; // ±1.5: pegada a un borde.

@@ -40,7 +40,7 @@ public class Entorno {
     public static final int SEMILLA_ARBOLES = 211; // Cambiarla sortea otra disposición (siempre la misma para cada semilla).
     private static final int INTENTOS_POR_ARBOL = 50; // Sorteos máximos para ubicar un árbol en la franja (casi siempre alcanza con 1 o 2).
 
-    // Árboles del campo, con el mismo formato que Parque.arboles(): {x, z, tipo, alturaTronco, diametroCopa, verde, giro}.
+    // Árboles del campo, con el mismo formato y la misma escala que Parque.arboles() (Parque.arbol()).
     public static final List<float[]> ARBOLES = Collections.unmodifiableList(calcularArboles());
 
     // ==================== 2. ÁRBOLES: POSICIONES DETERMINÍSTICAS ====================
@@ -72,11 +72,9 @@ public class Entorno {
     private static float[] arbol(int i, float x, float z) {
         int tipo = Variacion.valor(i, 0, 2, SEMILLA_ARBOLES) < 0.5f ? Parque.PINO : Parque.FRONDOSO; // Mitad y mitad.
         float v = Variacion.valor(i, 0, 3, SEMILLA_ARBOLES); // Tamaño relativo del árbol, entre 0 y 1.
-        float alturaTronco = tipo == Parque.PINO ? 0.8f + 0.4f * v : 1.4f + 0.6f * v; // Como en Parque.arboles().
-        float diametroCopa = 1.8f + (Parque.COPA_MAXIMA - 0.1f - 1.8f) * v; // Entre 1.8 y 2.4.
         float verde = Variacion.valor(i, 0, 4, SEMILLA_ARBOLES); // Tono de verde.
         float giro = (float) (2 * Math.PI * Variacion.valor(i, 0, 5, SEMILLA_ARBOLES)); // Orientación de la copa.
-        return new float[] {x, z, tipo, alturaTronco, diametroCopa, verde, giro}; // Formato de Parque.
+        return Parque.arbol(x, z, tipo, v, v, verde, giro); // Mismas alturas (5-7 y 5-6) que en los parques.
     }
 
     // ==================== 3. DIBUJO ====================

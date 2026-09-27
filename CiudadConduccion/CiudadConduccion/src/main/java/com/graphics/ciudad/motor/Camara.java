@@ -1,5 +1,6 @@
 package com.graphics.ciudad.motor; // Agrupa las piezas técnicas: ventana, shaders, geometría y cámara.
 
+import com.graphics.ciudad.mundo.Edificio; // Altura de los edificios: la cámara aérea no entra en ellos.
 import com.graphics.ciudad.mundo.Mapa; // Celdas de calle: la cámara de seguimiento no se pone sobre una manzana.
 import static org.lwjgl.glfw.GLFW.*; // Permite consultar las flechas que orbitan la cámara.
 
@@ -57,6 +58,7 @@ public class Camara {
     public static final float ELEVACION_AEREA_MAX = (float) Math.toRadians(85); // Casi un plano visto desde arriba.
     public static final float DISTANCIA_AEREA_MIN = 20; // Lo más cerca: una o dos manzanas.
     public static final float FACTOR_DISTANCIA_AEREA_MAX = 2.6f; // DISTANCIA_AEREA_MAX = 2.6 límites (143 con límite 55): toda la ciudad, un poco más lejos que la vista inicial.
+    public static final float MARGEN_TECHO = 2; // La aérea queda al menos esto por encima del techo que tiene debajo.
     public static final float PASO_ZOOM_AEREO = 6; // Unidades de distancia por paso de ruedita: la ciudad es grande.
     public static final float SENSIBILIDAD_DESPLAZAMIENTO = 0.0015f; // Desplazamiento por píxel, por unidad de distancia (lejos = más rápido).
 
@@ -280,9 +282,22 @@ public class Camara {
         return centroZ; // Entre -límite y límite.
     }
 
-    /** Posición {x, y, z} de la cámara aérea (la misma que configurar() envía al shader); para las pruebas. */
+    /**
+     * Posición {x, y, z} de la cámara aérea (la misma que configurar() envía al shader).
+     * Con la distancia mínima (20) y la elevación mínima (20°) el ojo baja hasta ≈ 6.8 de altura; si justo cae sobre
+     * una manzana con edificio (las torres llegan a ≈ 37 con la antena), quedaría adentro y se verían sus paredes
+     * desde dentro. Por eso, solo sobre una celda con edificio, el ojo sube hasta MARGEN_TECHO por encima de su techo.
+     * Sobre la calle o fuera de la ciudad la órbita no cambia.
+     */
     float[] ojoAereo() {
-        return orbitaAerea.ojo(centroX, 0, centroZ, 0); // Órbita alrededor del centro, sobre el suelo.
+        float[] ojo = orbitaAerea.ojo(centroX, 0, centroZ, 0); // Órbita alrededor del centro, sobre el suelo.
+        int fila = Mapa.indiceCelda(ojo[2]); // Celda que queda debajo del ojo (las filas son Z).
+        int columna = Mapa.indiceCelda(ojo[0]); // Y las columnas, X.
+        boolean enCiudad = fila >= 0 && fila < Mapa.MAPA.length && columna >= 0 && columna < Mapa.MAPA[fila].length;
+        if (enCiudad && Mapa.tipo(fila, columna) == Mapa.EDIFICIO) { // Encima de un edificio.
+            ojo[1] = Math.max(ojo[1], Edificio.alturaTotal(fila, columna) + MARGEN_TECHO); // Nunca dentro de él.
+        }
+        return ojo;
     }
 
     /**
@@ -302,7 +317,7 @@ public class Camara {
     /** Elige entre la vista aérea, la orbital alrededor del auto y la cámara situada detrás del auto. */
     public void configurar(Shader shader, float autoX, float autoZ, float angulo, int ancho, int alto) {
         if (modo == Modo.AEREA) { // Vista general: órbita alrededor del centro aéreo, sobre el suelo.
-            enviar(shader, orbitaAerea.ojo(centroX, 0, centroZ, 0), centroX, 0, centroZ, ancho, alto);
+            enviar(shader, ojoAereo(), centroX, 0, centroZ, ancho, alto); // Órbita, sin entrar en los edificios.
             return; // Evita reemplazarla con la cámara de seguimiento.
         }
         if (modo == Modo.ORBITAL) { // Órbita alrededor de la carrocería; θ relativo al ángulo del auto.

@@ -143,7 +143,7 @@ public class Entregas {
             float alturaBaliza = ALTURA_BALIZA + (float) Math.sin(tiempo * FRECUENCIA_BALIZA) * AMPLITUD_BALIZA; // Hace oscilar la baliza suavemente.
             cubo.cajaGirada(x, alturaBaliza, z, 0.8f, 0.8f, 0.8f, 1, 0.8f, 0.15f, tiempo); // Dibuja el cubo giratorio del objetivo.
         } else { // En el minimapa la marca del suelo quedaría pequeña: se agrega un cuadrado dorado bien visible.
-            cubo.caja(x, 24, z, 7, 0.1f, 7, 1, 0.8f, 0.15f); // Lo eleva a Y=24: por encima de los edificios y debajo del indicador del auto.
+            cubo.caja(x, Minimapa.ALTURA_DESTINO, z, 7, 0.1f, 7, 1, 0.8f, 0.15f); // Por encima de los edificios y debajo del indicador del auto.
         }
         shader.entero("uEmision", 0); // Devuelve a los siguientes objetos su iluminación normal.
     }

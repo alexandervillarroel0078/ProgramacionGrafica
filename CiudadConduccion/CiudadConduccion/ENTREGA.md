@@ -82,13 +82,18 @@ Las 13 están a mitad de cuadra, lejos de las esquinas donde están los semáfor
 
 Antes todos los edificios eran la misma caja con techo plano gris: solo cambiaban la altura y el color, y se veían clonados. Ahora `mundo/Edificio` elige para cada manzana un tipo (`TipoEdificio`) y lo arma con varios **volúmenes** (cajas con paredes) y **piezas de techo**:
 
-| Tipo | Forma | Alturas | Azotea o techo |
+Las alturas se cuentan en **pisos**: la planta baja comercial mide `ALTO_MINIMO_BASE` = 3.2 y cada piso de arriba `ALTO_PISO` = 3.0, como uno real (`Edificio.alturaPared(pisos)` = 3.2 + (pisos − 1) · 3). Así cada fila de ventanas coincide con un piso.
+
+| Tipo | Forma | Pisos (pared) | Azotea o techo |
 |---|---|---|---|
-| `TORRE` | Podio de 7 × 7 con el negocio y, encima, una torre angosta de 4.4 × 4.4 | 16 a 22 | Antena (mástil de 3.5) o tanque de agua sobre cuatro patas, mitad y mitad |
-| `BLOQUE` | Una caja de 7 × 7, como el edificio de antes | 7 a 11 | Losa, baranda metálica en todo el borde y caja de ascensor corrida hacia una esquina |
-| `ESCALONADO` | 2 o 3 niveles apilados de 7, 5.2 y 3.6 de lado, cada uno apoyado en el de abajo | 4 a 5 por nivel | Una losa en cada nivel |
-| `CASA_BAJA` | Casa de 1 o 2 pisos (3.2 y 5.2 de pared) | Techo de 2 más | Techo a dos aguas: un prisma triangular color teja, con la cumbrera en X o en Z, y una chimenea |
-| `DOBLE` | La manzana se parte en dos volúmenes pegados: uno alto de 4 de ancho y uno bajo de 3, de otro color | 9 a 13 y 4 a 6 | Una losa en cada volumen |
+| `TORRE` | Podio de 7 × 7 con el negocio y, encima, una torre angosta de 4.4 × 4.4 | 8 a 11 (24.2 a 33.2) | Antena (mástil de 3.5) o tanque de agua sobre cuatro patas, mitad y mitad |
+| `BLOQUE` | Una caja de 7 × 7, como el edificio de antes | 4 a 6 (12.2 a 18.2) | Losa, baranda metálica en todo el borde y caja de ascensor corrida hacia una esquina |
+| `ESCALONADO` | 2 o 3 niveles apilados de 7, 5.2 y 3.6 de lado, cada uno apoyado en el de abajo | Primer nivel 2 o 3, los demás 2 (4 a 7 en total) | Una losa en cada nivel |
+| `CASA_BAJA` | Casa de 2 pisos (6.2 de pared) | Techo de 2 más | Techo a dos aguas: un prisma triangular color teja, con la cumbrera en X o en Z, y una chimenea |
+| `DOBLE` | La manzana se parte en dos volúmenes pegados: uno alto de 4 de ancho y uno bajo de 3, de otro color | 5 a 7 y 2 a 3 | Una losa en cada volumen |
+
+- **La torre se sigue leyendo como torre:** la más baja (8 pisos, 24.2) supera a la parte más alta de cualquier otro tipo (7 pisos, 21.2). Con este mapa las torres llegan a 28 a 36 contando la antena o el tanque (`Edificio.ALTURA_MAXIMA` = 35.9).
+- **Cámaras y minimapa con torres altas:** el minimapa dibuja sus marcas (divisiones de sectores, destino e indicador del auto) por encima de `Edificio.ALTURA_MAXIMA` (antes estaban fijas en 22 a 26 y una torre las habría tapado). La cámara aérea, que con la distancia y la elevación mínimas baja a ≈ 6.8, sube hasta `MARGEN_TECHO` = 2 sobre el techo si queda encima de un edificio. El plano lejano (≈ 319) alcanza también a la punta de la torre más alta, y la cámara de seguimiento no cambia: va a 9 de altura sobre la calle, nunca sobre una manzana.
 
 - **Siempre la misma ciudad:** el tipo, los colores, las alturas y la orientación de cada pieza salen de `Variacion.valor` con la fila, la columna y una semilla fija por decisión, sin `Random`. La misma celda da siempre el mismo edificio. `SEMILLA_TIPO` está elegida para que en este mapa los tipos salgan parejos: 4 torres, 4 bloques, 4 escalonados, 4 casas bajas y 3 dobles.
 - **Paleta urbana:** las paredes son ladrillo, crema, blanco hueso, gris cemento, terracota, verde agua o amarillo pálido (`PALETA_FACHADAS`). Los techos son gris oscuro, gris claro, teja o verde de terraza (`PALETA_TECHOS`); las casas bajas son siempre de teja.
@@ -124,19 +129,21 @@ Las fachadas las dibuja `mundo/Fachada`.
 
 | Tipo | Columnas por cara | Ancho × alto | Altura de piso |
 |---|---|---|---|
-| `TORRE` | 4, juntas | 0.6 × 0.8 | 1.6: más filas |
-| `BLOQUE` | 2, anchas | 2.0 × 0.9 | 2 |
-| `ESCALONADO` | 3 | 0.9 × 1.0 | 2 |
-| `CASA_BAJA` | 2, pocas | 1.0 × 1.0 | 2 |
-| `DOBLE` | 3 | 0.8 × 0.9 | 2 |
+| `TORRE` | 3, juntas | 0.9 × 1.4 | 3 |
+| `BLOQUE` | 2, anchas | 2.0 × 1.4 | 3 |
+| `ESCALONADO` | 3 | 1.1 × 1.4 | 3 |
+| `CASA_BAJA` | 2, pocas | 1.1 × 1.2 | 3 |
+| `DOBLE` | 3 | 0.9 × 1.4 | 3 |
+
+- **Tamaño real:** el piso mide lo mismo en todos los tipos (`Edificio.ALTO_PISO` = 3) y las ventanas de 1.2 a 1.4 de alto, como las reales. El centro de cada fila está 1.4 por encima de su piso (`PRIMER_PISO_Y` = 1.9, luego 4.9, 7.9...): deja un antepecho de ≈ 0.7.
 
 - **Caras angostas:** si las columnas no entran en una cara (por ejemplo, la parte baja de un doble), se usan menos, dejando `MARGEN_LATERAL` a cada lado.
 - **Pisos alineados:** los pisos se cuentan desde la acera para todo el edificio, así las filas de ventanas de volúmenes vecinos coinciden.
-- **Ventanas que no se ponen:** las que no entran entre la base y el tope de su volumen (`MARGEN_VERTICAL`), las que quedarían sobre el negocio o el toldo (por debajo de `TOPE_PLANTA_BAJA` en una cara a la calle) y las que tapa otro volumen del mismo edificio, como la parte baja de un doble o el nivel de abajo de un escalonado. Por eso una casa baja de un piso no tiene ventanas: toda su planta baja es negocio.
+- **Ventanas que no se ponen:** las que no entran entre la base y el tope de su volumen (`MARGEN_VERTICAL`), las que quedarían sobre el negocio o el toldo (por debajo de `TOPE_PLANTA_BAJA` en una cara a la calle) y las que tapa otro volumen del mismo edificio, como la parte baja de un doble o el nivel de abajo de un escalonado. Por eso las casas bajas son siempre de 2 pisos (`PISOS_CASA_MIN` = 2): con uno solo, toda la planta baja es negocio y no quedaba lugar para ventanas (la casa de la celda 5,1 no tenía ninguna). `FachadaTest` verifica que todos los edificios tengan ventanas.
 
 **Ventanas según día y noche.**
 - **De día:** todas son vidrio claro, blanco-celeste grisáceo, sin emisión. El sol las ilumina como a cualquier superficie.
-- **De noche:** alrededor del 65 % está encendida (`PORCENTAJE_VENTANAS_ENCENDIDAS`); hoy son 633 de 979 (65 %).
+- **De noche:** alrededor del 65 % está encendida (`PORCENTAJE_VENTANAS_ENCENDIDAS`); hoy son 580 de 908 (64 %).
   - **Encendidas:** emisivas, con tonos de `TONOS_VENTANA`: amarillo cálido 40 %, blanco cálido 30 %, anaranjado suave 20 % y blanco frío 10 %.
   - **Apagadas:** azul-gris muy oscuro.
 - **Sin parpadeo:** cada ventana decide con un hash de edificio, volumen, cara, piso y columna (`Variacion.valor`, sin `Random`), así que la misma ventana siempre está igual.
@@ -156,12 +163,12 @@ Cada parque (clase `mundo/Parque`) tiene:
   - **Frondoso:** tronco cilíndrico fino y una copa de 3 esferas de distinto tamaño, desplazadas entre sí.
   - **Pino:** tronco y 3 conos apilados que se achican hacia arriba.
 
-  La copa nunca supera un cuarto del ancho del parque (2.5). Con 3 a 4.5 de alto, los árboles son más altos que el auto y más bajos que los edificios.
+  **Escala real:** los frondosos miden de 5 a 7 y los pinos de 5 a 6 (`ALTURA_FRONDOSO_*`, `ALTURA_PINO_*`), como árboles de vereda. Crecen hacia arriba: el tronco es el 40 % del frondoso (la copa empieza por encima de una persona) y el 20 % del pino, y la copa se estira en vertical. El ancho de la copa no cambia (1.8 a 2.4, nunca más de un cuarto del parque), así que no sale del césped. Los mismos árboles, con la misma escala, están en el campo que rodea la ciudad (`Parque.arbol()`, compartido con `Entorno`).
 - **Bancos:** entre 2 y 4 de madera con patas, en las diagonales entre los senderos y mirando hacia la fuente.
 
 Los parques no son copias. Cada uno usa su fila y su columna para "sortear" cuántos árboles tiene, dónde van, la mezcla de pinos y frondosos, las alturas, el tamaño de las copas, los tonos de verde y la cantidad de bancos. Para eso usa `Parque.variacion()`, una función de hash sin azar: da siempre el mismo resultado, así que el parque se ve igual en todos los cuadros y en cada ejecución.
 
-Todo queda dentro de la celda del parque, y los árboles evitan los postes de semáforos, PARE y farolas que hay en su acera. Las colisiones no cambian: la manzana entera ya es un obstáculo. `ParqueTest` verifica cantidades, distancias, tamaño de la copa, orientación de los bancos, que cada parque sea distinto y que las calles sigan transitables.
+Todo queda dentro de la celda del parque. Como ahora la copa está a la altura de las señales (de 2 a 7), un árbol solo se planta si su copa más ancha queda a `MARGEN_POSTES` = 0.2 de cada semáforo, PARE, cartel de sector y farola de su acera. Las colisiones no cambian: la manzana entera ya es un obstáculo. `ParqueTest` verifica cantidades, distancias, altura según el tipo, que la copa no salga del césped ni toque farolas, pantallas, semáforos o PARE, orientación de los bancos, que cada parque sea distinto, que cada parque tenga al menos 1 árbol y 1 banco (también probado con 13 × 13) y que las calles sigan transitables.
 
 ### Señalización vial
 
@@ -170,7 +177,7 @@ La señalización sigue criterios viales reales, con circulación por la derecha
 **Definiciones (en `Mapa`).** Una **intersección** es una celda de calle con calle hacia el norte o el sur **y** hacia el este o el oeste: con este mapa son las 36 celdas de fila y columna pares (`Mapa.intersecciones()`). Un **acceso** es cada calle que llega a una intersección (`Mapa.accesos()`). `Mapa.sectorDeCelda()` indica a qué sector pertenece cada una.
 
 **Semáforos: solo en el Centro.** Las 4 intersecciones del sector Centro, (4,4), (4,6), (6,4) y (6,6) (`INTERSECCIONES_SEMAFORO`), son las únicas del sector y es donde se cruzan las avenidas con más tránsito. En los barrios alcanza con prioridad de paso (PARE). Hay **un cabezal por acceso**: 4 por intersección, **16** en total.
-- **A la derecha y mirando al auto:** cada cabezal está en la esquina de vereda a la **derecha** de la calle que llega, porque el conductor mira hacia adelante y a su derecha, y así no lo tapa el tránsito contrario. Está al borde del paso peatonal, donde el auto se detiene, y sus luces miran hacia los autos que se acercan por ese acceso.
+- **A la derecha y mirando al auto:** cada cabezal está en la esquina de vereda a la **derecha** de la calle que llega, porque el conductor mira hacia adelante y a su derecha, y así no lo tapa el tránsito contrario. Está detrás del paso peatonal (`RETROCESO_SEMAFORO` = 0.5 + 3 = 3.5 desde el borde del cruce), donde el auto se detiene antes de pisar las franjas, y sus luces miran hacia los autos que se acercan por ese acceso.
 - **Cómo se coordinan:** la secuencia es rojo → verde → amarillo con el reloj global del juego. El rojo dura lo mismo que verde + amarillo (7 = 5 + 2), y el grupo este-oeste usa el mismo ciclo desfasado 7 s. Por eso:
   - los accesos opuestos (norte y sur, o este y oeste) muestran siempre el mismo color;
   - mientras norte-sur está en rojo, este-oeste pasa por verde y amarillo, y al revés;
@@ -180,18 +187,18 @@ La señalización sigue criterios viales reales, con circulación por la derecha
 - **Modelo del cabezal (coherente con las farolas):** base cilíndrica ancha (`ANCHO_BASE` 0.34, `ALTO_BASE` 0.35) y poste cilíndrico gris oscuro (`ANCHO_POSTE` 0.14) hasta una caja angosta y alta casi negra (`ANCHO_CAJA` 0.42 × `ALTO_CAJA` 1.3 × `PROFUNDIDAD_CAJA` 0.34, desde `BASE_CAJA` = 2.5 de altura, por encima del techo de los autos). En la cara que mira al tráfico hay tres **lentes redondas** (cilindros cortos acostados con `uRotacion`): roja arriba, amarilla al medio y verde abajo. La lente de la fase es **emisiva** y tiene su color intenso (`COLORES_LENTE`); las otras dos usan el mismo color multiplicado por `BRILLO_APAGADA` (0.15), sin emisión, así se ve que hay tres y cuál es cuál. Sobre cada lente hay una **visera**: una placa fina inclinada `INCLINACION_VISERA` = 20° hacia abajo. La espalda de la caja queda lisa, como en un semáforo real.
 - **Modelo sin OpenGL:** igual que `modeloFarola()`, `Semaforo.modelo(activa)` devuelve la lista de piezas en coordenadas locales del cabezal y `dibujar()` solo la recorre, girándola hacia el acceso. `SemaforoTest` comprueba que en cada fase hay exactamente una lente emisiva y es la del color de la fase, que las lentes están en orden (rojo arriba, verde abajo) dentro de la caja y en su frente, y que nada sobresale por detrás.
 
-**Pasos peatonales: donde el peatón cruza.** Hay **25** en total:
-- **En cada acceso de las intersecciones con semáforo (16):** el semáforo detiene a los autos y le da tiempo al peatón para cruzar.
-- **Junto a cada parque (9 más):** en la calle vecina al norte y en la vecina al oeste, pegados al cruce siguiente, porque los parques atraen peatones. Donde coincide con un paso de semáforo no se repite: el parque del Centro ya tiene los suyos.
+**Pasos peatonales: donde el peatón cruza.** Hay **52** en total:
+- **En cada acceso de los cruces controlados (48):** los 4 con semáforo y los 8 con PARE (`Decoracion.crucesControlados()`), 4 accesos cada uno. Ahí el auto se detiene, así que el peatón cruza seguro.
+- **Junto a cada parque (4 más):** en la calle vecina al norte y en la vecina al oeste, junto al cruce siguiente, porque los parques atraen peatones. Donde coincide con un paso de un cruce controlado no se repite.
 
 Cada paso:
-- **Posición:** está en la celda de calle vecina a la intersección, pegado al borde del cruce y sin invadirlo.
+- **Posición:** está en la celda de calle vecina a la intersección, a `SEPARACION_CRUCE` = 0.5 del borde del cruce: la esquina queda libre para doblar, como en la vida real.
 - **Tamaño:** mide `LARGO_PASO` = 3 en el sentido de circulación y cubre la calle de vereda a vereda: 6 franjas separadas 1.65 cubren 9.15 de los 10 de ancho.
 - **Franjas:** son alargadas en el sentido de circulación, a 0.02–0.04 sobre el asfalto para evitar el z-fighting.
 - **Orientación:** los hay en calles norte-sur y este-oeste.
 - **Línea amarilla:** `Ciudad` no pinta las marcas que quedarían debajo del paso.
 
-`UBICACIONES_PASOS` se genera desde `INTERSECCIONES_SEMAFORO` y la lista de parques.
+`UBICACIONES_PASOS` se genera desde los cruces controlados y la lista de parques, así que con 13 × 13 se recalcula solo. Ninguna farola cambió de lugar al agregar los pasos: están a mitad de cuadra y los pasos, junto a los cruces.
 
 **PARE: en cruces sin semáforo, nunca junto a uno.** No se escriben a mano: `calcularUbicacionesPare()` elige **los cruces sin semáforo más cercanos al Centro**, hasta `MAX_PARE` = 10, con estos criterios:
 - **Fuera del Centro:** allí hay semáforos.
@@ -210,7 +217,7 @@ Con el mapa 11 × 11 quedan **8** (`UBICACIONES_PARE`):
 
 (2,6), (8,4), (4,2) y (6,8) no llevan PARE porque son los cruces de entrada del Barrio Norte, el Parque Sur, la Zona Oeste y la Zona Este.
 - **Por qué esos accesos:** frenan a quien llega desde el borde de la ciudad por la calle secundaria (`direccionHaciaAfuera()` del sector).
-- **Posición:** también en la esquina de vereda a la derecha del acceso, mirando al auto que llega.
+- **Posición:** también en la vereda a la derecha del acceso, mirando al auto que llega, y detrás del paso peatonal (`RETROCESO_PARE` = 3.5, igual que el semáforo): el auto se detiene antes de las franjas.
 - **Forma:** octógono rojo aproximado con cubos, borde blanco y franja blanca, sobre un poste.
 - **Nunca junto a un semáforo:** dos señales que ordenan cosas distintas en el mismo cruce confunden al conductor. `SenalizacionTest` lo verifica.
 - **Contramano:** se eliminaron las señales de contramano/dirección.
@@ -221,6 +228,29 @@ Con el mapa 11 × 11 quedan **8** (`UBICACIONES_PARE`):
 - **Posición:** en la vereda derecha, sobre la **primera manzana del sector** que encuentra el conductor, `RETROCESO_CARTEL` = 0.75 después de la esquina y `SEPARACION_CARTEL` = 1.5 adentro del cordón, mirando a los autos que entran.
 
  Son verdes con borde blanco, estilo vial, y llevan el mismo nombre que el HUD y el minimapa. El texto se genera con STBEasyFont y cada trazo se dibuja como una caja fina sobre la placa.
+
+### Escala: 1 unidad ≈ 1 metro
+
+El auto mide 1.4 de alto, como uno real, así que todo se mide en metros. Como referencia, una persona mide 1.7 (no está modelada).
+
+| Elemento | En el juego | Real | Constantes |
+|---|---|---|---|
+| Auto | 1.4 alto × 1.65 ancho × 2.6 largo | 1.45 × 1.8 × 4.3 (compacto: más corto) | `Cabina.PERFIL_CABINA`, `Auto` |
+| Puerta | 2.0 × 1.0 | 2.0–2.1 × 0.9 | `Fachada.ALTO_PUERTA`, `ANCHO_PUERTA` |
+| Planta baja | 3.2 | 3–4 | `Edificio.ALTO_MINIMO_BASE` |
+| Piso | 3.0 | 2.8–3.0 | `Edificio.ALTO_PISO` |
+| Ventana | 1.2–1.4 alto × 0.9–2.0 ancho | 1.2–1.5 alto | `TipoEdificio` |
+| Vidriera | 1.4 alto (de 0.6 a 2.0) × 2.4 | 1.5–2 | `Fachada.ALTO_VIDRIERA` |
+| Edificios | Casa 8.6 con techo; bloque 12–21; torre 28–36 | — | `Edificio.PISOS_*` |
+| Banco | Asiento a 0.5, 1.6 de largo, respaldo hasta ≈ 1.0 | 0.45 / 1.5–1.8 | `Parque.dibujarBanco` |
+| Árbol | Frondoso 5–7, pino 5–6; copa de 1.8–2.4 de ancho | 5–10 | `Parque.ALTURA_FRONDOSO_*`, `ALTURA_PINO_*` |
+| Farola | Bombilla a 4.5, brazo de 1.5 | 4–5 (peatonal) | `Iluminacion.ALTURA_BOMBILLA` |
+| Semáforo | Caja de 2.5 a 3.8, lentes de 0.3 | 2.4–3.5, lentes de 0.2–0.3 | `Semaforo.BASE_CAJA`, `ALTO_CAJA` |
+| PARE | Octógono de 0.9 sobre poste de 2.6 | 0.75 a 2.1–2.5 | `Senalizacion.LADO_PARE`, `ALTURA_POSTE` |
+| Cartel de sector | Placa de 2.6 × 0.8 con centro a 2.4 | Similar | `Senalizacion.ANCHO_CARTEL` |
+| Calle | 10 de ancho, carriles de 5 | Carriles de 3–3.5 | `Mapa.TAM_CELDA` (ancha a propósito: colisiones y tráfico dependen de ella) |
+
+`EdificioTest` verifica que el piso esté entre 2.8 y 3.2, que la puerta entre en la planta baja y que la torre más baja supere a cualquier otro tipo. `FachadaTest` verifica que las ventanas midan 1.2 a 1.5 y entren en su piso.
 
 ### Figuras generadas por código
 
@@ -339,7 +369,7 @@ Paquete `com.graphics.ciudad`:
 | `mundo/Ciudad` | Base de asfalto, líneas amarillas entre cruces, aceras, edificios (delegados en `Edificio`) y césped de los parques. |
 | `mundo/Edificio` | Elige el tipo y los colores de cada edificio con `Variacion` (`tipo()`, `colorPared()`, `colorTecho()`), arma sus volúmenes (`volumenes()`) y las piezas del techo (`piezas()`: losas, baranda, ascensor, antena, tanque, techo a dos aguas y chimenea), y las dibuja. Tiene la paleta urbana y las alturas por tipo. |
 | `mundo/TipoEdificio` | Enum con los cinco tipos (`TORRE`, `BLOQUE`, `ESCALONADO`, `CASA_BAJA`, `DOBLE`) y el patrón de ventanas de cada uno. |
-| `mundo/Decoracion` | Fachadas de los edificios (delegadas en `Fachada`) y los pasos peatonales de `UBICACIONES_PASOS` (un paso por acceso de cada cruce con semáforo y hasta dos junto a cada parque, en ambas orientaciones); `hayPasoSobre()` permite que `Ciudad` corte la línea amarilla. Delega los parques en `Parque` y la señalización en `Senalizacion`. |
+| `mundo/Decoracion` | Fachadas de los edificios (delegadas en `Fachada`) y los pasos peatonales de `UBICACIONES_PASOS` (un paso por acceso de cada cruce con semáforo o PARE, a `SEPARACION_CRUCE` del cruce, y hasta dos junto a cada parque, en ambas orientaciones); `hayPasoSobre()` permite que `Ciudad` corte la línea amarilla. Delega los parques en `Parque` y la señalización en `Senalizacion`. |
 | `mundo/Fachada` | Planta baja comercial en las caras a la calle: vidriera, puerta centrada y vidriera, con un toldo escalonado de color (a veces a rayas) sobre cada vidriera; las vidrieras se iluminan de noche. Ventanas en cada volumen según el patrón del tipo (`ventanas()`), sin tapar el negocio ni quedar dentro de otro volumen: vidrio claro de día; de noche, ≈65 % encendidas con tonos variados, decidido por ventana con un hash. |
 | `mundo/Variacion` | Hash determinístico `valor(fila, columna, índice, semilla)` que usan `Parque`, `Fachada` y `Edificio` para variar sin azar por cuadro. |
 | `mundo/Parque` | Senderos en cruz, fuente central, 4 a 6 árboles (frondosos de esferas y pinos de conos) y 2 a 4 bancos mirando a la fuente. `arboles()` y `bancos()` calculan la disposición de cada parque con `variacion()` (determinística). `dibujarArbol()` es estático: `Entorno` lo reutiliza para los árboles del campo. |
@@ -384,7 +414,7 @@ Pruebas en `src/test/java/com/graphics/ciudad`:
 - `FachadaTest`: cada ventana tiene siempre el mismo estado; cada ventana queda dentro de su volumen, nunca sobre el negocio ni tapada por otro volumen; el patrón de ventanas cambia con el tipo; de noche, la fracción encendida está dentro de ±10 % de `PORCENTAJE_VENTANAS_ENCENDIDAS` y aparecen todos los tonos; de día ninguna ventana es emisiva; vidrieras y toldos entran en la cara con `MARGEN_ESQUINA` y no tapan la puerta; ninguna puerta está a menos de `MARGEN_ESQUINA` de una esquina y las puertas de caras vecinas nunca comparten esquina; el toldo no llega a la calzada y se usan todos los colores, lisos y a rayas.
 - `SemaforoTest`: orden y duraciones del ciclo; en dos ciclos completos, los accesos opuestos siempre muestran el mismo color y norte-sur y este-oeste nunca están a la vez en verde o amarillo; en cada fase, exactamente una lente emisiva y del color de la fase; lentes ordenadas en el frente de la caja y espalda lisa.
 - `SenalizacionTest`: semáforos en todas las intersecciones del Centro y solo ahí, uno por acceso, a la derecha y mirando al auto; 6 a 10 PARE en cruces sin semáforo, a la derecha y mirando al auto; un cartel por sector dentro de su sector; ningún semáforo, PARE ni cartel sobre la calle, y las calles siguen transitables. Reglas: cada PARE está en un cruce interior, fuera del Centro, que no es de entrada, detiene a quien viene del borde y ningún cruce descartado está más cerca del Centro; cada cartel está a la derecha de la entrada de su sector, sobre la primera manzana del sector y mirando al auto.
-- `PasosPeatonalesTest`: cada paso está sobre calle, en la celda vecina a una intersección y pegado a su borde, con `LARGO_PASO` en el sentido de circulación y de vereda a vereda; hay pasos en ambas orientaciones; cada paso está junto a un cruce con semáforo o a un parque; cada acceso con semáforo y cada parque tienen su paso; ninguna marca amarilla queda debajo.
+- `PasosPeatonalesTest`: cada paso está sobre calle, en la celda vecina a una intersección y a `SEPARACION_CRUCE` de su borde; todos los accesos de los cruces con semáforo o PARE tienen paso, y el semáforo y el PARE quedan detrás de él; con `LARGO_PASO` en el sentido de circulación y de vereda a vereda; hay pasos en ambas orientaciones; cada paso está junto a un cruce con semáforo o a un parque; cada acceso con semáforo y cada parque tienen su paso; ninguna marca amarilla queda debajo.
 - `MapaTest.testSectores`: entre 4 y 5 sectores con nombre y ningún punto de la ciudad sin sector.
 - `TraficoTest`: 120 s simulados con dt fijo; todos los vehículos siempre en calles, dentro del mapa, sin tocar manzanas, en movimiento y, en los tramos rectos, a `DESPLAZAMIENTO_CARRIL` ± 0.35 a la derecha de la línea central. En esa misma simulación, los vehículos nunca se solapan entre sí y todos recorren al menos el 40 % de crucero × 120 s (ninguno queda trabado en una espera mutua). Además comprueba que dos rutas comparten una calle en sentidos opuestos y la geometría de las esquinas de carril. Regla del corredor: con el jugador en el carril contrario no frena; en el mismo carril a 10 reduce de a poco (nunca más de `DESACELERACION` · dt por cuadro), con el freno encendido y sin tocarlo; pegado adelante se detiene sin atravesarlo; detrás no frena; y `factorPorHueco`. También `reset()`, choque con el jugador y rutas inválidas rechazadas.
 - `LucesTraficoTest`: con noche activa todos los vehículos tienen las luces encendidas y con día apagadas; la tecla F no las cambia; los faros acompañan posición y orientación durante los giros.
@@ -414,7 +444,7 @@ Pruebas en `src/test/java/com/graphics/ciudad`:
 | Pausa | P congela auto, tráfico, entregas y semáforos (dt = 0) y muestra "PAUSA". | `juego/EstadoPartida`, `Juego`, `interfaz/Hud` |
 | Menú de inicio | Al abrir, la escena queda de fondo oscurecida con el título y "Presiona ENTER para empezar". | `juego/EstadoPartida`, `interfaz/Hud` |
 | Sectores con nombre | Centro, Barrio Norte, Parque Sur, Zona Oeste y Zona Este. El HUD muestra el sector actual y el minimapa dibuja sus divisiones y sus nombres. | `mundo/Mapa`, `juego/Minimapa`, `interfaz/Hud` |
-| Señalización vial | Semáforos coordinados solo en el Centro (un cabezal por acceso, a la derecha y mirando al auto), pasos peatonales en esos accesos y junto a los parques, PARE octogonales en los cruces sin semáforo más cercanos al Centro (8 con 11 × 11) y un cartel verde por sector en su entrada. Ver "Señalización vial" en la sección 2. | `mundo/Senalizacion`, `mundo/Semaforo`, `mundo/Decoracion`, `mundo/Mapa` |
+| Señalización vial | Semáforos coordinados solo en el Centro (un cabezal por acceso, a la derecha y mirando al auto), pasos peatonales en todos los accesos de los cruces con semáforo o PARE y junto a los parques, PARE octogonales en los cruces sin semáforo más cercanos al Centro (8 con 11 × 11) y un cartel verde por sector en su entrada. Ver "Señalización vial" en la sección 2. | `mundo/Senalizacion`, `mundo/Semaforo`, `mundo/Decoracion`, `mundo/Mapa` |
 
 ## 6. Limitaciones conocidas
 
@@ -474,13 +504,13 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | Tiempos del semáforo | `mundo/Semaforo.java` | `DURACION_VERDE` (5), `DURACION_AMARILLO` (2); `DURACION_ROJO` se calcula como verde + amarillo (7) y `DESFASE_ESTE_OESTE` = rojo, para mantener la coordinación; `BRILLO_APAGADA` (0.15: brillo de las lentes apagadas) |
 | Forma del semáforo | `mundo/Semaforo.java` | `ANCHO_BASE` (0.34), `ALTO_BASE` (0.35), `ANCHO_POSTE` (0.14), `ANCHO_CAJA` (0.42), `ALTO_CAJA` (1.3), `PROFUNDIDAD_CAJA` (0.34), `BASE_CAJA` (2.5), `DIAMETRO_LENTE` (0.3), `GROSOR_LENTE` (0.05), `SEPARACION_LENTES` (0.38; con la caja de 1.3 y lentes de 0.3, hasta 0.5), `LARGO_VISERA` (0.22), `GROSOR_VISERA` (0.025), `EXCESO_VISERA` (0.06), `HOLGURA_VISERA` (0.03), `INCLINACION_VISERA` (20°). `SemaforoTest` avisa si las lentes se salen de la caja |
 | Colores del semáforo | `mundo/Semaforo.java` | `COLOR_BASE`, `COLOR_POSTE` (grises oscuros), `COLOR_CAJA` (casi negro, también las viseras), `COLORES_LENTE` (rojo, ámbar y verde encendidos; apagados = × `BRILLO_APAGADA`) |
-| Dónde hay semáforos | `mundo/Senalizacion.java` | `SECTOR_SEMAFOROS` (0 = Centro): todas las intersecciones de ese sector forman `INTERSECCIONES_SEMAFORO`; `RETROCESO_SEMAFORO` (= `LARGO_PASO`), `MARGEN_VEREDA` (0.6) |
+| Dónde hay semáforos | `mundo/Senalizacion.java` | `SECTOR_SEMAFOROS` (0 = Centro): todas las intersecciones de ese sector forman `INTERSECCIONES_SEMAFORO`; `RETROCESO_SEMAFORO` y `RETROCESO_PARE` (= `SEPARACION_CRUCE` + `LARGO_PASO` = 3.5: detrás del paso), `MARGEN_VEREDA` (0.6) |
 | Agregar o mover una entrega | `juego/Entregas.java` | `CELDAS_DESTINOS` `{fila, columna}` de calle (se convierten a `DESTINOS` con `Mapa.centro()`, como las rutas de `Trafico`) y su nombre en `NOMBRES_DESTINOS` |
 | Qué tan cerca y lento hay que llegar | `juego/Entregas.java` | `RADIO_LLEGADA` (3), `VELOCIDAD_LLEGADA` (1) |
 | Tamaño del minimapa | `juego/Minimapa.java` | `TAMANO_MAX_MINIMAPA` (260 px), `MARGEN_MINIMAPA` (18 px), `BORDE_MINIMAPA` (3 px), `MARGEN_MAPA` (zoom), `ESCALA_INDICADOR` (1.5) |
 | Cámara de seguimiento | `motor/Camara.java` | `DISTANCIA_SEGUIMIENTO` (12), `ALTURA_SEGUIMIENTO` (9), `ALTURA_OBJETIVO` (0.8). Recorte: `DISTANCIA_SEGUIMIENTO_MIN` (1.5), `MARGEN_BORDE_CAMARA` (1: cuánto adentro del borde queda la cámara), `PASO_RECORTE` (0.25), `VELOCIDAD_ALEJAMIENTO` (12 unidades/s para volver a la distancia normal; acercarse es inmediato) |
 | Vista inicial de la cámara aérea | `motor/Camara.java` | `ANGULO_AEREO_INICIAL` (0.6 rad), `FACTOR_RADIO` (1.86), `FACTOR_ALTURA` (1.57), proporcionales a `Mapa.LIMITE`: la cámara arranca a 1.86 límites del centro sobre el suelo y 1.57 de altura (≈ 40° de elevación y 134 de distancia) |
-| Mouse en la cámara aérea | `motor/Camara.java` | `ELEVACION_AEREA_MIN` / `ELEVACION_AEREA_MAX` (20° / 85°), `DISTANCIA_AEREA_MIN` (20), `FACTOR_DISTANCIA_AEREA_MAX` (2.6: la distancia máxima es 2.6 · `Mapa.LIMITE` = 143, algo más que la vista inicial; el plano lejano se ajusta solo), `PASO_ZOOM_AEREO` (6 por paso de ruedita), `SENSIBILIDAD_DESPLAZAMIENTO` (0.0015 por píxel y por unidad de distancia: lejos, el botón derecho mueve más rápido) |
+| Mouse en la cámara aérea | `motor/Camara.java` | `ELEVACION_AEREA_MIN` / `ELEVACION_AEREA_MAX` (20° / 85°), `DISTANCIA_AEREA_MIN` (20), `FACTOR_DISTANCIA_AEREA_MAX` (2.6: la distancia máxima es 2.6 · `Mapa.LIMITE` = 143, algo más que la vista inicial; el plano lejano se ajusta solo), `PASO_ZOOM_AEREO` (6 por paso de ruedita), `SENSIBILIDAD_DESPLAZAMIENTO` (0.0015 por píxel y por unidad de distancia: lejos, el botón derecho mueve más rápido); `MARGEN_TECHO` (2: sobre un edificio, la aérea queda al menos esto por encima de su techo) |
 | Rutas del tráfico | `trafico/Trafico.java` | `RUTAS_CELDAS`: listas cíclicas de cruces `{fila, columna}` (pares); cada tramo debe ir en línea recta por calle, o el juego se detiene al arrancar con un mensaje |
 | Velocidad y color de los vehículos | `trafico/Trafico.java` | `VELOCIDADES` (7, 6, 8, 6.5), `COLORES` |
 | Manejo del tráfico | `trafico/Vehiculo.java` | `VELOCIDAD_GIRO` (2.2 rad/s), `RADIO_WAYPOINT` (2), `FRACCION_MINIMA_CURVA` (0.3), `DISTANCIA_ANTICIPACION` (4) |
@@ -496,14 +526,14 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | Tamaño y estilo del HUD | `interfaz/Hud.java` | `ALTO_REFERENCIA` (380: escala 2 con 760 px de alto), `ESCALA_MINIMA` (1), `ESCALA_MAXIMA` (3), `MARGEN` (12), `RELLENO` (8), `ALTO_LINEA` (11), `ALFA_PANEL` (0.55), `ALFA_MENU` (0.7), `AYUDA` |
 | PARE | `mundo/Senalizacion.java` | `MAX_PARE` (10); `UBICACIONES_PARE` (`{fila, columna, dFila, dColumna}`) lo calcula `calcularUbicacionesPare()`; `LADO_PARE` (0.9), `BORDE_PARE` (0.07), `ALTURA_POSTE` (2.6) |
 | Carteles de sector | `mundo/Senalizacion.java` | `RETROCESO_CARTEL` (0.75, de la esquina al cartel), `SEPARACION_CARTEL` (1.5, del cordón al cartel); `CARTELES_SECTOR` (`{sector, x, z, ángulo}`) lo calcula `cartelDeSector()`; `ANCHO_CARTEL` (2.6), `ALTO_CARTEL` (0.8), `BORDE_CARTEL` (0.08), `ALTURA_CARTEL` (2.4), `COLOR_CARTEL` |
-| Pasos peatonales | `mundo/Decoracion.java` | `LARGO_PASO` (3, en el sentido de circulación), `FRANJAS_PASO` (6), `SEPARACION_FRANJAS` (1.65), `ANCHO_FRANJA` (0.9), `ALTURA_FRANJA` (0.03), `GROSOR_FRANJA` (0.02). `UBICACIONES_PASOS` se genera en `calcularUbicaciones()` desde `INTERSECCIONES_SEMAFORO` y `Mapa.parques()`. Mantener `(FRANJAS_PASO - 1) · SEPARACION_FRANJAS + ANCHO_FRANJA` ≤ 10, o `PasosPeatonalesTest` avisa que la pintura invade la vereda |
+| Pasos peatonales | `mundo/Decoracion.java` | `LARGO_PASO` (3, en el sentido de circulación), `SEPARACION_CRUCE` (0.5, asfalto libre entre el cruce y el paso), `FRANJAS_PASO` (6), `SEPARACION_FRANJAS` (1.65), `ANCHO_FRANJA` (0.9), `ALTURA_FRANJA` (0.03), `GROSOR_FRANJA` (0.02). `UBICACIONES_PASOS` se genera en `calcularUbicaciones()`: todos los accesos de `crucesControlados()` (semáforo o PARE) y los parques |
 | Colores de paredes y techos | `mundo/Edificio.java` | `PALETA_FACHADAS` (ladrillo, crema, blanco hueso, gris cemento, terracota, verde agua, amarillo pálido), `PALETA_TECHOS` (gris oscuro, gris claro, teja, verde), `TECHO_TEJA` (índice del techo de las casas), `COLOR_METAL`, `COLOR_TANQUE` |
 | Qué tipo sale en cada manzana | `mundo/Edificio.java` | `SEMILLA_TIPO` (167): cambiarla sortea otra ciudad (siempre la misma para cada semilla). `EdificioTest` avisa si quedan menos de 4 tipos |
-| Torre | `mundo/Edificio.java` | `ALTURA_TORRE_MIN` / `ALTURA_TORRE_MAX` (16 / 22), `ANCHO_TORRE` (4.4), `ALTURA_PODIO` (3.2), `PROBABILIDAD_ANTENA` (0.5), `ALTO_ANTENA` (3.5), `GROSOR_ANTENA` (0.12), `DIAMETRO_TANQUE` (1.6), `ALTO_TANQUE` (1.3), `ALTO_PATAS` (0.8) |
-| Bloque | `mundo/Edificio.java` | `ALTURA_BLOQUE_MIN` / `ALTURA_BLOQUE_MAX` (7 / 11), `ALTO_BARANDA` (0.5), `GROSOR_BARANDA` (0.1), `ANCHO_ASCENSOR` (2), `ALTO_ASCENSOR` (1.8), `CORRIMIENTO_ASCENSOR` (1.3) |
-| Escalonado | `mundo/Edificio.java` | `ANCHOS_NIVELES` (7, 5.2, 3.6), `NIVELES_MIN` / `NIVELES_MAX` (2 / 3), `ALTURA_NIVEL_MIN` / `ALTURA_NIVEL_MAX` (4 / 5) |
-| Casa baja | `mundo/Edificio.java` | `PISOS_CASA_MIN` / `PISOS_CASA_MAX` (1 / 2), `ALTO_PLANTA_CASA` (3.2), `ALTO_PISO_CASA` (2), `ALTO_TECHO_CASA` (2), `LADO_CHIMENEA` (0.5), `ALTO_CHIMENEA` (1.8) |
-| Doble | `mundo/Edificio.java` | `ANCHO_PARTE_ALTA` (4 de los 7), `ALTURA_DOBLE_ALTA_MIN` / `_MAX` (9 / 13), `ALTURA_DOBLE_BAJA_MIN` / `_MAX` (4 / 6) |
+| Torre | `mundo/Edificio.java` | `ALTO_PISO` (3, todos los tipos), `PISOS_TORRE_MIN` / `PISOS_TORRE_MAX` (8 / 11 = 24.2 a 33.2), `ANCHO_TORRE` (4.4), `ALTURA_PODIO` (3.2), `PROBABILIDAD_ANTENA` (0.5), `ALTO_ANTENA` (3.5), `GROSOR_ANTENA` (0.12), `DIAMETRO_TANQUE` (1.6), `ALTO_TANQUE` (1.3), `ALTO_PATAS` (0.8). Mantener `PISOS_TORRE_MIN` mayor que el máximo de los otros tipos (`EdificioTest`) |
+| Bloque | `mundo/Edificio.java` | `PISOS_BLOQUE_MIN` / `PISOS_BLOQUE_MAX` (4 / 6), `ALTO_BARANDA` (0.5), `GROSOR_BARANDA` (0.1), `ANCHO_ASCENSOR` (2), `ALTO_ASCENSOR` (1.8), `CORRIMIENTO_ASCENSOR` (1.3) |
+| Escalonado | `mundo/Edificio.java` | `ANCHOS_NIVELES` (7, 5.2, 3.6), `NIVELES_MIN` / `NIVELES_MAX` (2 / 3), `PISOS_PRIMER_NIVEL_MIN` / `_MAX` (2 / 3), `PISOS_POR_NIVEL` (2, los de arriba) |
+| Casa baja | `mundo/Edificio.java` | `PISOS_CASA_MIN` / `PISOS_CASA_MAX` (2 / 2: con 1 piso no hay lugar para ventanas), `ALTO_PLANTA_CASA` (3.2), `ALTO_PISO_CASA` (= `ALTO_PISO`), `ALTO_TECHO_CASA` (2), `LADO_CHIMENEA` (0.5), `ALTO_CHIMENEA` (1.8) |
+| Doble | `mundo/Edificio.java` | `ANCHO_PARTE_ALTA` (4 de los 7), `PISOS_DOBLE_ALTA_MIN` / `_MAX` (5 / 7), `PISOS_DOBLE_BAJA_MIN` / `_MAX` (2 / 3) |
 | Huella y losas | `mundo/Edificio.java` | `VUELO_CORNISA` (0.15; `MEDIA_HUELLA` = 3.5 + vuelo debe quedar < 5 o `EdificioTest` avisa), `GROSOR_LOSA` (0.3), `ALTO_MINIMO_BASE` (3.2: la planta baja con su toldo) |
 | Ventanas según el tipo | `mundo/TipoEdificio.java` | Los cinco números de cada tipo: columnas por cara, separación, ancho, alto y altura de piso (por ejemplo `TORRE(4, 1.0f, 0.6f, 0.8f, 1.6f)`) |
 | Dónde van las ventanas | `mundo/Fachada.java` | `PRIMER_PISO_Y` (1.7), `MARGEN_VERTICAL` (0.35), `MARGEN_LATERAL` (0.3), `TOPE_PLANTA_BAJA` (2.8) |
@@ -515,9 +545,9 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | Forma de la cabina | `vehiculo/Cabina.java` | `PERFIL_CABINA` (puntos {z, y} del contorno lateral; debe ser convexo), `ANCHO_CABINA` (1.40) |
 | Vidrios de la cabina | `vehiculo/Cabina.java` | `COLOR_VIDRIO` (azul-gris oscuro), `SEPARACION_VIDRIO` (0.012), `GROSOR_VIDRIO` (0.02), `MARGEN_VIDRIO` (0.07), `BASE_VENTANILLA` (0.98), `TECHO_VENTANILLA` (1.33), `CENTRO_PARANTE` (0.20), `ANCHO_PARANTE` (0.12) |
 | Color del auto del jugador | `vehiculo/Auto.java` | `COLOR_CARROCERIA` (rojo: carrocería y cabina) |
-| Árboles de los parques | `mundo/Parque.java` | `ARBOLES_MIN` / `ARBOLES_MAX` (4 / 6), `COPA_MAXIMA` (1/4 de la celda = 2.5), `RADIO_CENTRO_LIBRE` (2.2), `LUGARES_ARBOL` (esquinas y bordes posibles), `SEPARACION_POSTES` (1.6) |
+| Árboles de los parques y del campo | `mundo/Parque.java` | `ARBOLES_MIN` / `ARBOLES_MAX` (4 / 6), `ALTURA_FRONDOSO_MIN` / `_MAX` (5 / 7), `ALTURA_PINO_MIN` / `_MAX` (5 / 6), `FRACCION_TRONCO_FRONDOSO` (0.4), `FRACCION_TRONCO_PINO` (0.2), `COPA_MAXIMA` (1/4 de la celda = 2.5, ancho), `RADIO_CENTRO_LIBRE` (2.2), `LUGARES_ARBOL` (esquinas y bordes posibles), `MARGEN_POSTES` (0.2 entre la copa y cada señal; `MITAD_SEMAFORO` 0.5, `MITAD_PARE`, `MITAD_CARTEL`, `MITAD_FAROLA`) |
 | Senderos, fuente y bancos | `mundo/Parque.java` | `ANCHO_SENDERO` (1.4), `GROSOR_SENDERO` (0.03), `COLOR_SENDERO`, `RADIO_FUENTE` (1.2), `COLOR_AGUA`, `COLOR_AGUA_NOCHE`, `BANCOS_MIN` / `BANCOS_MAX` (2 / 4), `DISTANCIA_BANCO` (2.3) |
-| Divisiones de sectores en el minimapa | `juego/Minimapa.java` | `GROSOR_DIVISION` (0.7), `ALTURA_DIVISION` (22) |
+| Marcas del minimapa | `juego/Minimapa.java` | `GROSOR_DIVISION` (0.7); `ALTURA_DIVISION`, `ALTURA_DESTINO`, `ALTURA_INDICADOR`, `ALTURA_PUNTA` = `Edificio.ALTURA_MAXIMA` + 1 a 4 (por encima de la torre más alta y por debajo de `ESCALA_ALTURA_MAPA` = 100) |
 | Campo alrededor de la ciudad | `mundo/Entorno.java` | `ENTORNO_EXTRA` (100: cuánto sigue el pasto más allá del borde; no cambia `Mapa.LIMITE`), `ALTURA_CAMPO` (0), `COLOR_CAMPO`, `ANCHO_CORDON` (1.2), `ALTO_CORDON` (0.3), `COLOR_CORDON` |
 | Árboles del campo | `mundo/Entorno.java` | `CANTIDAD_ARBOLES` (36), `DISTANCIA_MIN_ARBOL` (6 desde el borde; debe superar cordón + media copa o `EntornoTest` avisa), `ANCHO_FRANJA_ARBOLES` (50), `SEMILLA_ARBOLES` (211: otra semilla, otra disposición, siempre la misma) |
 | Colores del cielo | `iluminacion/Cielo.java` | `COLOR_CENIT_DIA` (azul intenso), `COLOR_HORIZONTE_DIA` (celeste claro), `COLOR_CENIT_NOCHE` (azul casi negro), `COLOR_HORIZONTE_NOCHE` (azul noche); `RADIO_CIELO` (250, menor que el plano lejano ≈ 319) |

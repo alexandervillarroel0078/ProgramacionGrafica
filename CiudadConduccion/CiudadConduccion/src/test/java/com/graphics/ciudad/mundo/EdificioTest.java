@@ -90,7 +90,7 @@ public class EdificioTest extends TestCase {
                 switch (Edificio.tipo(fila, columna)) {
                     case TORRE:
                         assertTrue(v.get(1).anchoX < v.get(0).anchoX); // Angosta sobre el podio.
-                        assertTrue(v.get(1).yTope - Edificio.ALTURA_ACERA >= Edificio.ALTURA_TORRE_MIN - 1e-4f); // Alta.
+                        assertTrue(v.get(1).yTope - Edificio.ALTURA_ACERA >= Edificio.alturaPared(Edificio.PISOS_TORRE_MIN) - 1e-4f); // Alta.
                         break;
                     case ESCALONADO:
                         assertTrue(v.size() >= 2 && v.size() <= 3); // 2 o 3 niveles.
@@ -114,6 +114,27 @@ public class EdificioTest extends TestCase {
                     default:
                         assertEquals(1, v.size()); // El bloque es una sola caja.
                         break;
+                }
+            }
+        }
+    }
+
+    /**
+     * Escala (1 u ≈ 1 m): el piso mide lo de uno real (≈ 3), la puerta entra en la planta baja, y la torre más baja
+     * supera a la parte más alta de cualquier otro tipo, así sigue leyéndose como torre.
+     */
+    public void testEscalaDePisosYAlturas() {
+        assertTrue(Edificio.ALTO_PISO >= 2.8f && Edificio.ALTO_PISO <= 3.2f); // Piso real.
+        assertTrue(Fachada.ALTO_PUERTA < Edificio.ALTO_MINIMO_BASE); // La puerta entra en la planta baja.
+        float torreMasBaja = Edificio.alturaPared(Edificio.PISOS_TORRE_MIN); // 24.2.
+        float otrosMasAlto = Math.max(Edificio.alturaPared(Edificio.PISOS_BLOQUE_MAX),
+            Math.max(Edificio.alturaPared(Edificio.PISOS_DOBLE_ALTA_MAX),
+                Edificio.alturaPared(Edificio.PISOS_PRIMER_NIVEL_MAX + (Edificio.NIVELES_MAX - 1) * Edificio.PISOS_POR_NIVEL))); // El más alto de los demás tipos.
+        assertTrue(torreMasBaja > otrosMasAlto);
+        for (int fila = 0; fila < Mapa.MAPA.length; fila++) { // Ningún techo supera la altura máxima calculada.
+            for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                if (Mapa.tipo(fila, columna) == Mapa.EDIFICIO) {
+                    assertTrue(Edificio.alturaTotal(fila, columna) <= Edificio.ALTURA_MAXIMA + 1e-4f);
                 }
             }
         }

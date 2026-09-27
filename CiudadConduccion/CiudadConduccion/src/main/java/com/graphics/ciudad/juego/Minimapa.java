@@ -2,6 +2,7 @@ package com.graphics.ciudad.juego; // Agrupa las reglas de la partida y el minim
 
 import com.graphics.ciudad.motor.Cubo; // Dibuja el indicador del auto.
 import com.graphics.ciudad.motor.Shader; // Cambia la proyección del shader con uMapa.
+import com.graphics.ciudad.mundo.Edificio; // Altura del edificio más alto: las marcas van por encima.
 import com.graphics.ciudad.mundo.Mapa; // Aporta el límite de la ciudad para encuadrar el minimapa.
 import com.graphics.ciudad.vehiculo.Auto; // Aporta posición y orientación del indicador.
 import static org.lwjgl.glfw.GLFW.*; // Permite consultar la tecla que controla el minimapa.
@@ -32,7 +33,14 @@ public class Minimapa {
     private static final float ESCALA_INDICADOR = 1.5f; // Agranda el indicador del auto: la ciudad 11 × 11 ocupa más espacio en el recuadro.
     private static final float MARGEN_MAPA = 2; // Unidades de mundo que se dejan alrededor de la ciudad dentro del recuadro.
     private static final float GROSOR_DIVISION = 0.7f; // Ancho, en unidades de mundo, de las líneas que separan los sectores.
-    private static final float ALTURA_DIVISION = 22; // Altura de esas líneas: por encima de los edificios, debajo del auto y el destino.
+    // ALTURAS DE LAS MARCAS: en la vista desde arriba lo más alto tapa lo más bajo (ciudad.vert ordena la profundidad
+    // por Y). Las marcas van por encima del edificio más alto de la ciudad (Edificio.ALTURA_MAXIMA, ≈ 37 con las
+    // torres de 8 a 11 pisos): antes estaban fijas en 22-26 y una torre más alta las habría tapado. Todas deben quedar
+    // por debajo de ESCALA_ALTURA_MAPA (100) del shader, que es la profundidad máxima del minimapa.
+    public static final float ALTURA_DIVISION = Edificio.ALTURA_MAXIMA + 1; // Líneas de los sectores.
+    public static final float ALTURA_DESTINO = Edificio.ALTURA_MAXIMA + 2; // Cuadrado dorado del destino (lo usa Entregas).
+    public static final float ALTURA_INDICADOR = Edificio.ALTURA_MAXIMA + 3; // Marca cian del auto.
+    public static final float ALTURA_PUNTA = Edificio.ALTURA_MAXIMA + 4; // Punta blanca, encima de todo.
     private int recuadroX; // Último recuadro dibujado: X de su esquina inferior izquierda, en píxeles (OpenGL).
     private int recuadroY; // Y de su esquina inferior izquierda, en píxeles medidos desde abajo.
     private int recuadroLado; // Lado del recuadro en píxeles; 0 si el minimapa no se dibujó.
@@ -134,11 +142,11 @@ public class Minimapa {
         float autoZ = auto.getZ(); // Lee la posición Z del vehículo.
         float angulo = auto.getAngulo(); // Lee la orientación del vehículo.
         float e = ESCALA_INDICADOR; // Nombre corto para multiplicar los tamaños del indicador.
-        cubo.cajaGirada(autoX, 25, autoZ, 2.2f * e, 0.1f, 3.2f * e, 0.1f, 1, 1, angulo); // Marca la posición con un rectángulo cian orientado.
+        cubo.cajaGirada(autoX, ALTURA_INDICADOR, autoZ, 2.2f * e, 0.1f, 3.2f * e, 0.1f, 1, 1, angulo); // Marca la posición con un rectángulo cian orientado.
         float frenteX = -(float) Math.sin(angulo); // Calcula la dirección frontal en el eje X.
         float frenteZ = -(float) Math.cos(angulo); // Calcula la dirección frontal en el eje Z.
         float puntaX = autoX + frenteX * 2 * e; // Desplaza la punta hacia delante en X (dos unidades por la escala).
         float puntaZ = autoZ + frenteZ * 2 * e; // Desplaza la punta hacia delante en Z (dos unidades por la escala).
-        cubo.caja(puntaX, 26, puntaZ, 0.9f * e, 0.1f, 0.9f * e, 1, 1, 1); // Dibuja la punta blanca encima del indicador cian.
+        cubo.caja(puntaX, ALTURA_PUNTA, puntaZ, 0.9f * e, 0.1f, 0.9f * e, 1, 1, 1); // Dibuja la punta blanca encima del indicador cian.
     }
 }

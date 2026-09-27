@@ -24,8 +24,27 @@ public class ParqueTest extends TestCase {
                 assertTrue(que, Math.abs(a[0] - cx) + radioCopa <= Mapa.TAM_CELDA / 2); // No sale de la celda en X.
                 assertTrue(que, Math.abs(a[1] - cz) + radioCopa <= Mapa.TAM_CELDA / 2); // No sale de la celda en Z.
                 assertFalse(que, Mapa.esCalleEn(a[0], a[1])); // El tronco no está en la calle.
-                float altoTotal = Parque.TOPE_CESPED + a[3] + a[4]; // Altura aproximada del árbol.
-                assertTrue(que + " escala", altoTotal > 2.5f && altoTotal < 6); // Más alto que el auto, más bajo que los edificios.
+                float altura = a[3] + a[Parque.ALTO_COPA]; // Del césped a la punta.
+                if (a[2] == Parque.PINO) { // Escala real (1 u ≈ 1 m).
+                    assertTrue(que + " pino " + altura, altura >= Parque.ALTURA_PINO_MIN - 1e-4f && altura <= Parque.ALTURA_PINO_MAX + 1e-4f);
+                } else {
+                    assertTrue(que + " frondoso " + altura, altura >= Parque.ALTURA_FRONDOSO_MIN - 1e-4f && altura <= Parque.ALTURA_FRONDOSO_MAX + 1e-4f);
+                }
+                assertTrue(que, Math.abs(a[0] - cx) + radioCopa <= Parque.MITAD_CESPED + 1e-4f); // La copa no sale del césped.
+                assertTrue(que, Math.abs(a[1] - cz) + radioCopa <= Parque.MITAD_CESPED + 1e-4f);
+                for (float[] poste : com.graphics.ciudad.iluminacion.Iluminacion.POSTES) { // La copa no toca ninguna farola.
+                    assertTrue(que + " farola", Math.hypot(a[0] - poste[0], a[1] - poste[1]) >= radioCopa + Parque.MITAD_FAROLA);
+                }
+                for (float[] b : com.graphics.ciudad.iluminacion.Iluminacion.BOMBILLAS) { // Ni la pantalla colgada del brazo.
+                    float mitadPantalla = com.graphics.ciudad.iluminacion.Iluminacion.ANCHO_PANTALLA / 2;
+                    assertTrue(que + " pantalla", Math.hypot(a[0] - b[0], a[1] - b[2]) >= radioCopa + mitadPantalla);
+                }
+                for (float[] sem : Senalizacion.SEMAFOROS) { // Ni un semáforo.
+                    assertTrue(que + " semáforo", Math.hypot(a[0] - sem[0], a[1] - sem[1]) >= radioCopa + Parque.MITAD_SEMAFORO);
+                }
+                for (float[] pare : Senalizacion.PARES) { // Ni un PARE.
+                    assertTrue(que + " PARE", Math.hypot(a[0] - pare[0], a[1] - pare[1]) >= radioCopa + Parque.MITAD_PARE);
+                }
             }
         }
     }
@@ -78,6 +97,20 @@ public class ParqueTest extends TestCase {
                     assertTrue(Colisiones.puedeCircular(Mapa.centro(columna), Mapa.centro(fila))); // Centro transitable.
                 }
             }
+        }
+    }
+
+    /**
+     * Cada parque tiene al menos 1 árbol y 1 banco. Los árboles se saltean cerca de semáforos, PARE, carteles y
+     * farolas; con otro MAPA (por ejemplo 13 × 13) un parque rodeado de señales podría quedarse sin ninguno. Esta
+     * prueba corre sobre el MAPA actual: se ejecuta también con 13 × 13 al probar el mapa ampliado.
+     */
+    public void testCadaParqueTieneArbolYBanco() {
+        assertFalse(Mapa.parques().isEmpty());
+        for (int[] p : Mapa.parques()) {
+            String que = "parque " + p[0] + "," + p[1];
+            assertTrue(que + " sin árboles", Parque.arboles(p[0], p[1]).size() >= 1);
+            assertTrue(que + " sin bancos", Parque.bancos(p[0], p[1]).size() >= 1);
         }
     }
 }

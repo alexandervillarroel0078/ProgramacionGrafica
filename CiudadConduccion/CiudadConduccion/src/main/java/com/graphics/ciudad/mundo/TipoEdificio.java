@@ -9,16 +9,19 @@ package com.graphics.ciudad.mundo; // Agrupa lo que forma la ciudad: mapa, edifi
  */
 public enum TipoEdificio {
 
-    /** Alta y angosta sobre un podio comercial; en la azotea, antena o tanque de agua. Muchas ventanas chicas. */
-    TORRE(4, 1.0f, 0.6f, 0.8f, 1.6f),
+    // Medidas en metros (1 u ≈ 1 m). Una ventana real mide ≈ 1.2-1.5 de alto; el piso, Edificio.ALTO_PISO = 3.
+    // Con alto 1.4 y el centro de la fila a 1.4 del piso (Fachada.PRIMER_PISO_Y), queda un antepecho de ≈ 0.7.
+
+    /** Alta y angosta sobre un podio comercial; en la azotea, antena o tanque de agua. Ventanas angostas y juntas. */
+    TORRE(3, 1.3f, 0.9f, 1.4f, Edificio.ALTO_PISO),
     /** El edificio clásico de altura media, con baranda en la azotea y caja de ascensor. Pocas ventanas, anchas. */
-    BLOQUE(2, 3.0f, 2.0f, 0.9f, 2.0f),
+    BLOQUE(2, 3.0f, 2.0f, 1.4f, Edificio.ALTO_PISO),
     /** Dos o tres volúmenes apilados, cada uno más chico que el de abajo, cada uno con su losa. */
-    ESCALONADO(3, 1.6f, 0.9f, 1.0f, 2.0f),
-    /** Casa de 1 o 2 pisos con techo a dos aguas (prisma triangular) color teja. Pocas ventanas. */
-    CASA_BAJA(2, 3.2f, 1.0f, 1.0f, 2.0f),
+    ESCALONADO(3, 1.8f, 1.1f, 1.4f, Edificio.ALTO_PISO),
+    /** Casa de 2 pisos con techo a dos aguas (prisma triangular) color teja. Pocas ventanas, más bajas. */
+    CASA_BAJA(2, 3.2f, 1.1f, 1.2f, Edificio.ALTO_PISO),
     /** Dos volúmenes de distinta altura que comparten la manzana. */
-    DOBLE(3, 1.6f, 0.8f, 0.9f, 2.0f);
+    DOBLE(3, 1.6f, 0.9f, 1.4f, Edificio.ALTO_PISO);
 
     public final int columnasVentanas; // Ventanas por piso en una cara ancha.
     public final float separacionVentanas; // Distancia entre centros de ventanas vecinas.

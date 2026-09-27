@@ -93,10 +93,17 @@ public class FachadaTest extends TestCase {
         });
     }
 
-    /** El patrón cambia con el tipo: la torre tiene más columnas y pisos más bajos, el bloque ventanas más anchas. */
+    /**
+     * El patrón cambia con el tipo (la torre tiene más columnas, el bloque ventanas más anchas), pero el piso es el
+     * mismo en todos: Edificio.ALTO_PISO. Cada ventana entra en su piso y tiene el alto de una real (1.2 a 1.5).
+     */
     public void testPatronDeVentanasSegunTipo() {
         assertTrue(TipoEdificio.TORRE.columnasVentanas > TipoEdificio.BLOQUE.columnasVentanas); // Más columnas.
-        assertTrue(TipoEdificio.TORRE.alturaPiso < TipoEdificio.BLOQUE.alturaPiso); // Más filas.
+        for (TipoEdificio t : TipoEdificio.values()) { // Mismo piso y ventanas de tamaño real.
+            assertEquals(Edificio.ALTO_PISO, t.alturaPiso, 0f);
+            assertTrue(t + " alto", t.altoVentana >= 1.2f && t.altoVentana <= 1.5f);
+            assertTrue(t + " entra en el piso", t.altoVentana + 2 * Fachada.MARGEN_VERTICAL < t.alturaPiso);
+        }
         for (TipoEdificio t : TipoEdificio.values()) { // Ninguna ventana es más ancha que la del bloque.
             assertTrue(TipoEdificio.BLOQUE.anchoVentana >= t.anchoVentana);
         }
@@ -207,5 +214,16 @@ public class FachadaTest extends TestCase {
             assertTrue(usado); // Todos los colores aparecen.
         }
         assertTrue(hayRayas && hayLisos); // Hay toldos lisos y a rayas.
+    }
+
+    /** Todos los edificios tienen ventanas (antes la casa de 1 piso de la celda 5,1 no tenía ninguna). */
+    public void testTodosLosEdificiosTienenVentanas() {
+        for (int fila = 0; fila < Mapa.MAPA.length; fila++) {
+            for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                if (Mapa.tipo(fila, columna) == Mapa.EDIFICIO) {
+                    assertFalse(fila + "," + columna + " sin ventanas", Fachada.ventanas(fila, columna).isEmpty());
+                }
+            }
+        }
     }
 }

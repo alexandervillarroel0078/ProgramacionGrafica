@@ -14,10 +14,12 @@ import java.util.List; // Tipo de esas listas.
  * VARIACIÓN DETERMINÍSTICA: cada parque usa su fila y columna para "sortear" disposición, tipo de árbol, altura, tamaño
  * de copa y tono de verde con variacion(), una función que siempre da el mismo número para los mismos datos. Así los
  * parques son distintos entre sí, pero cada uno se ve igual en todos los cuadros y en cada ejecución.
- * ESCALA: el auto mide ≈1.4 de alto y 2.6 de largo, los edificios 5 a 13; los árboles miden entre 3 y 4.5 y la copa
- * no supera un cuarto del ancho del parque (COPA_MAXIMA = 2.5).
+ * ESCALA (1 u ≈ 1 m): el auto mide 1.4 de alto; los frondosos miden de 5 a 7 y los pinos de 5 a 6, como árboles de
+ * vereda reales. Crecen hacia ARRIBA (tronco más alto y copa estirada), no hacia los costados: el ancho de la copa
+ * sigue sin superar un cuarto del parque (COPA_MAXIMA = 2.5), así no sale del césped.
  * Todo queda dentro de la celda del parque: nada invade la calle ni participa en colisiones (Colisiones ya bloquea la
- * manzana entera). Los árboles evitan los postes de semáforos, PARE y farolas que están en la acera del parque.
+ * manzana entera). Los árboles evitan los postes de semáforos, PARE, carteles y farolas que están en la acera del
+ * parque: con la copa a la altura de esas señales, el tronco se aleja lo suficiente para que la copa no las toque.
  * Se comunica con: Decoracion (lo llama para cada celda de parque), Figuras y Cubo (dibujo), Shader (emisión),
  * Mapa (centro de la celda), Senalizacion e Iluminacion (postes que hay que esquivar). Entorno reutiliza dibujarArbol()
  * para los árboles del campo, y Sombras lee arboles() y bancos() para ubicar sus manchas.
@@ -37,7 +39,20 @@ public class Parque {
     public static final int BANCOS_MIN = 2; // Menor cantidad de bancos por parque.
     public static final int BANCOS_MAX = 4; // Mayor cantidad de bancos por parque.
     public static final float DISTANCIA_BANCO = 2.3f; // Distancia del centro a cada banco, entre dos senderos.
-    public static final float SEPARACION_POSTES = 1.6f; // Un árbol no se planta a menos de esto de un semáforo, PARE o farola.
+    // Árboles altos: la copa (de 2 a 7 de altura) está a la altura de semáforos, PARE, carteles y farolas. Un árbol se
+    // planta solo si su copa más ancha posible (COPA_MAXIMA / 2) queda a MARGEN_POSTES de la mitad de cada señal.
+    public static final float MARGEN_POSTES = 0.2f; // Aire entre el borde de la copa y la señal más cercana.
+    public static final float MITAD_SEMAFORO = 0.5f; // Media extensión del cabezal del semáforo (caja, lentes y viseras).
+    public static final float MITAD_PARE = Senalizacion.LADO_PARE / 2; // Medio octógono del PARE.
+    public static final float MITAD_CARTEL = Senalizacion.ANCHO_CARTEL / 2; // Media placa del cartel de sector.
+    public static final float MITAD_FAROLA = Iluminacion.ANCHO_BASE / 2; // Media base de la farola (el brazo va hacia la calle).
+    // Altura total de los árboles (del césped a la punta) y qué parte es tronco.
+    public static final float ALTURA_FRONDOSO_MIN = 5; // Frondoso: de 5 a 7.
+    public static final float ALTURA_FRONDOSO_MAX = 7;
+    public static final float ALTURA_PINO_MIN = 5; // Pino: de 5 a 6.
+    public static final float ALTURA_PINO_MAX = 6;
+    public static final float FRACCION_TRONCO_FRONDOSO = 0.4f; // 2 a 2.8 de tronco: la copa empieza por encima de una persona.
+    public static final float FRACCION_TRONCO_PINO = 0.2f; // Los pinos tienen el tronco corto y los conos casi hasta abajo.
     public static final float RADIO_FUENTE = 1.2f; // Radio de la base de la fuente.
     public static final float[] COLOR_AGUA = {0.25f, 0.50f, 0.85f}; // Agua de día (recibe luz).
     public static final float[] COLOR_AGUA_NOCHE = {0.12f, 0.30f, 0.55f}; // Agua de noche: emisiva pero oscura, "levemente" brillante.
@@ -50,6 +65,9 @@ public class Parque {
     };
     public static final int FRONDOSO = 0; // Tipo de árbol: tronco fino y copa de esferas.
     public static final int PINO = 1; // Tipo de árbol: tronco y conos apilados.
+    // Formato de un árbol: {x, z, tipo, alturaTronco, diametroCopa, verde, giro, altoCopa}. altoCopa es cuánto sube la
+    // copa por encima del tronco: la altura total es alturaTronco + altoCopa.
+    public static final int ALTO_COPA = 7; // Índice de altoCopa en el arreglo.
 
     // ==================== 2. VARIACIÓN DETERMINÍSTICA ====================
 
@@ -89,30 +107,49 @@ public class Parque {
             }
             int i = lista.size(); // Índice del árbol: distingue su variación de la de los demás.
             int tipo = variacion(fila, columna, i, 4) < proporcionPinos ? PINO : FRONDOSO; // Mezcla de tipos.
-            float alturaTronco = tipo == PINO ? 0.8f + 0.4f * variacion(fila, columna, i, 5) : 1.4f + 0.6f * variacion(fila, columna, i, 5); // Pinos de tronco corto.
-            float diametroCopa = 1.8f + (COPA_MAXIMA - 0.1f - 1.8f) * variacion(fila, columna, i, 6); // Entre 1.8 y 2.4: nunca más de 1/4 del parque.
             float verde = variacion(fila, columna, i, 7); // Tono de verde (0 = claro, 1 = oscuro).
             float giro = (float) (2 * Math.PI * variacion(fila, columna, i, 8)); // Orientación de la copa: rompe la simetría.
-            lista.add(new float[] {x, z, tipo, alturaTronco, diametroCopa, verde, giro}); // Guarda el árbol.
+            lista.add(arbol(x, z, tipo, variacion(fila, columna, i, 5), variacion(fila, columna, i, 6), verde, giro)); // Guarda el árbol.
         }
         return lista; // Árboles del parque.
     }
 
-    /** Indica si (x, z) está a menos de SEPARACION_POSTES de un semáforo, un PARE o un poste de farola. */
+    /**
+     * Árbol {x, z, tipo, alturaTronco, diametroCopa, verde, giro, altoCopa} con sus medidas: vAltura y vCopa (entre 0
+     * y 1) eligen la altura total y el ancho de la copa dentro de sus rangos. Lo usan los parques y el campo (Entorno),
+     * así los dos tienen árboles de la misma escala.
+     */
+    public static float[] arbol(float x, float z, int tipo, float vAltura, float vCopa, float verde, float giro) {
+        boolean pino = tipo == PINO;
+        float minimo = pino ? ALTURA_PINO_MIN : ALTURA_FRONDOSO_MIN; // Rango de altura según el tipo.
+        float maximo = pino ? ALTURA_PINO_MAX : ALTURA_FRONDOSO_MAX;
+        float altura = minimo + (maximo - minimo) * vAltura; // Altura total del árbol.
+        float alturaTronco = altura * (pino ? FRACCION_TRONCO_PINO : FRACCION_TRONCO_FRONDOSO); // Parte que es tronco.
+        float diametroCopa = 1.8f + (COPA_MAXIMA - 0.1f - 1.8f) * vCopa; // Entre 1.8 y 2.4: nunca más de 1/4 del parque.
+        return new float[] {x, z, tipo, alturaTronco, diametroCopa, verde, giro, altura - alturaTronco}; // El resto es copa.
+    }
+
+    /** Indica si una copa en (x, z) tocaría un semáforo, un PARE, un cartel de sector o una farola. */
     private static boolean cercaDeUnPoste(float x, float z) {
+        float copa = COPA_MAXIMA / 2 + MARGEN_POSTES; // Radio de la copa más ancha, con aire.
         for (float[] s : Senalizacion.SEMAFOROS) { // Semáforos del Centro.
-            if (Math.hypot(x - s[0], z - s[1]) < SEPARACION_POSTES) { // Demasiado cerca.
+            if (Math.hypot(x - s[0], z - s[1]) < copa + MITAD_SEMAFORO) { // La copa tocaría el cabezal.
                 return true; // Se descarta el lugar.
             }
         }
         for (float[] p : Senalizacion.PARES) { // Señales de PARE.
-            if (Math.hypot(x - p[0], z - p[1]) < SEPARACION_POSTES) { // Demasiado cerca.
-                return true; // Se descarta el lugar.
+            if (Math.hypot(x - p[0], z - p[1]) < copa + MITAD_PARE) {
+                return true;
+            }
+        }
+        for (float[] c : Senalizacion.CARTELES_SECTOR) { // Carteles de sector {sector, x, z, ángulo}.
+            if (Math.hypot(x - c[1], z - c[2]) < copa + MITAD_CARTEL) {
+                return true;
             }
         }
         for (float[] poste : Iluminacion.POSTES) { // Postes de farola.
-            if (Math.hypot(x - poste[0], z - poste[1]) < SEPARACION_POSTES) { // Demasiado cerca.
-                return true; // Se descarta el lugar.
+            if (Math.hypot(x - poste[0], z - poste[1]) < copa + MITAD_FAROLA) {
+                return true;
             }
         }
         return false; // El lugar está libre.
@@ -222,42 +259,57 @@ public class Parque {
         }
     }
 
-    /** Árbol frondoso: tronco cilíndrico fino y copa de tres esferas de distinto tamaño, desplazadas entre sí. */
+    /**
+     * Árbol frondoso: tronco cilíndrico y copa de tres esferas de distinto tamaño, desplazadas entre sí.
+     * Las medidas verticales de la copa se escriben en "copas" (múltiplos del diámetro) y se estiran con k: sin estirar,
+     * la copa sube ALTO_COPA_FRONDOSO copas por encima del tronco (0.35 + 0.30 + 0.65 / 2 = 0.975); con
+     * k = altoCopa / (0.975 · copa) la punta queda justo en alturaTronco + altoCopa, sin cambiar el ancho.
+     */
     private static void dibujarFrondoso(Figuras figuras, float[] a, float base) {
         float x = a[0]; // Posición del tronco en X.
         float z = a[1]; // Posición del tronco en Z.
         float altoTronco = a[3]; // Alto del tronco.
-        float copa = a[4]; // Diámetro de la esfera principal.
+        float copa = a[4]; // Diámetro (ancho) de la esfera principal.
         float giro = a[6]; // Orientación de la copa.
-        figuras.cilindro.dibujar(x, base + altoTronco / 2, z, 0.28f, altoTronco, 0.28f, 0.38f, 0.22f, 0.12f); // Dibuja el tronco marrón.
+        float k = a[ALTO_COPA] / (ALTO_COPA_FRONDOSO * copa); // Cuánto se estira la copa hacia arriba.
+        float v = copa * k; // Una "copa" en vertical.
+        figuras.cilindro.dibujar(x, base + altoTronco / 2, z, 0.34f, altoTronco, 0.34f, 0.38f, 0.22f, 0.12f); // Dibuja el tronco marrón.
         float r = 0.10f + 0.08f * a[5]; // Tono de verde: un poco de rojo...
         float g = 0.50f - 0.15f * a[5]; // ...más o menos verde según el árbol...
         float b = 0.16f + 0.06f * a[5]; // ...y algo de azul.
-        float centroCopa = base + altoTronco + copa * 0.35f; // La copa abraza el extremo del tronco.
-        figuras.esfera.dibujar(x, centroCopa, z, copa, copa * 0.9f, copa, r, g, b); // Esfera principal, un poco achatada.
+        float centroCopa = base + altoTronco + v * 0.35f; // La copa abraza el extremo del tronco.
+        figuras.esfera.dibujar(x, centroCopa, z, copa, v * 0.9f, copa, r, g, b); // Esfera principal.
         float dx = (float) Math.cos(giro) * 0.35f; // Desplazamiento de las esferas menores, girado por árbol.
         float dz = (float) Math.sin(giro) * 0.35f; // Igual en Z.
-        figuras.esfera.dibujar(x + dx, centroCopa + copa * 0.3f, z + dz, copa * 0.7f, copa * 0.65f, copa * 0.7f, r + 0.03f, g + 0.05f, b); // Esfera alta, más clara.
-        figuras.esfera.dibujar(x - dx, centroCopa - copa * 0.1f, z - dz, copa * 0.6f, copa * 0.55f, copa * 0.6f, r, g - 0.06f, b); // Esfera baja, más oscura.
+        figuras.esfera.dibujar(x + dx, centroCopa + v * 0.3f, z + dz, copa * 0.7f, v * 0.65f, copa * 0.7f, r + 0.03f, g + 0.05f, b); // Esfera alta, más clara: su punta es la del árbol.
+        figuras.esfera.dibujar(x - dx, centroCopa - v * 0.1f, z - dz, copa * 0.6f, v * 0.55f, copa * 0.6f, r, g - 0.06f, b); // Esfera baja, más oscura.
     }
 
-    /** Pino: tronco cilíndrico y tres conos apilados que se achican hacia arriba. */
+    /** Cuántas "copas" sube la copa del frondoso sin estirar: centro 0.35 + esfera alta 0.30 + su mitad 0.325. */
+    private static final float ALTO_COPA_FRONDOSO = 0.35f + 0.30f + 0.65f / 2;
+    /** Alto de cada cono del pino, de abajo hacia arriba (sin estirar); cada uno se apoya a SOLAPE_CONOS del anterior. */
+    private static final float[] ALTOS_CONOS = {1.3f, 1.1f, 0.9f};
+    private static final float SOLAPE_CONOS = 0.55f; // El siguiente cono empieza al 55 % del anterior: se superponen.
+    /** Alto de la pila de conos sin estirar: 1.3 · 0.55 + 1.1 · 0.55 + 0.9 = 2.22. */
+    private static final float ALTO_PILA_CONOS = (ALTOS_CONOS[0] + ALTOS_CONOS[1]) * SOLAPE_CONOS + ALTOS_CONOS[2];
+
+    /** Pino: tronco cilíndrico y tres conos apilados que se achican hacia arriba; la pila se estira hasta altoCopa. */
     private static void dibujarPino(Figuras figuras, float[] a, float base) {
         float x = a[0]; // Posición del tronco en X.
         float z = a[1]; // Posición del tronco en Z.
         float altoTronco = a[3]; // Alto del tronco.
         float anchoCono = a[4]; // Diámetro del cono inferior.
+        float k = a[ALTO_COPA] / ALTO_PILA_CONOS; // Estiramiento vertical: la punta queda en alturaTronco + altoCopa.
         figuras.cilindro.dibujar(x, base + altoTronco / 2, z, 0.3f, altoTronco, 0.3f, 0.36f, 0.22f, 0.13f); // Tronco.
         float r = 0.06f + 0.04f * a[5]; // Verde oscuro de pino...
         float g = 0.38f - 0.10f * a[5]; // ...que varía por árbol...
         float b = 0.16f + 0.03f * a[5]; // ...con un poco de azul.
         float[] escalas = {1.0f, 0.72f, 0.46f}; // Cada cono es más angosto que el de abajo.
-        float[] altos = {1.3f, 1.1f, 0.9f}; // Y más bajo.
         float y = base + altoTronco; // Donde empieza el primer cono.
         for (int i = 0; i < escalas.length; i++) { // Apila los conos.
-            float alto = altos[i]; // Alto de este cono.
+            float alto = ALTOS_CONOS[i] * k; // Alto de este cono, estirado.
             figuras.cono.dibujar(x, y + alto / 2, z, anchoCono * escalas[i], alto, anchoCono * escalas[i], r, g + 0.04f * i, b); // Cono, un poco más claro arriba.
-            y += alto * 0.55f; // El siguiente se apoya a mitad del anterior: los conos se superponen.
+            y += alto * SOLAPE_CONOS; // El siguiente se apoya sobre este: los conos se superponen.
         }
     }
 

@@ -13,17 +13,17 @@ public class PasosPeatonalesTest extends TestCase {
         return new int[] {Mapa.indiceCelda(paso[1]), Mapa.indiceCelda(paso[0])}; // Z da la fila y X la columna.
     }
 
-    /** Indica si la celda está en la lista de cruces con semáforo. */
-    private static boolean esCruceConSemaforo(int fila, int columna) {
-        for (int[] cruce : Senalizacion.INTERSECCIONES_SEMAFORO) { // Revisa la lista.
+    /** Indica si la celda es un cruce controlado (con semáforo o con PARE). */
+    private static boolean esCruceControlado(int fila, int columna) {
+        for (int[] cruce : Decoracion.crucesControlados()) { // Revisa la lista.
             if (cruce[0] == fila && cruce[1] == columna) { // Coincide.
-                return true; // Tiene semáforo.
+                return true; // Tiene semáforo o PARE.
             }
         }
-        return false; // No tiene semáforo.
+        return false; // Sin control.
     }
 
-    /** Cada paso está sobre calle, pegado al borde de un cruce, con LARGO_PASO en el sentido de circulación y de vereda a vereda. */
+    /** Cada paso está sobre calle, a SEPARACION_CRUCE del borde de un cruce, con LARGO_PASO en el sentido de circulación y de vereda a vereda. */
     public void testUbicacionYForma() {
         List<float[]> pasos = Decoracion.UBICACIONES_PASOS; // Lista generada.
         assertFalse(pasos.isEmpty()); // Debe haber pasos.
@@ -50,13 +50,16 @@ public class PasosPeatonalesTest extends TestCase {
             assertFalse(donde, Mapa.esInterseccion(c[0], c[1])); // El paso no está dentro del cruce.
             float sobreEje = ejeX ? paso[0] : paso[1]; // Coordenada a lo largo de la calle.
             float centroCelda = ejeX ? Mapa.centro(c[1]) : Mapa.centro(c[0]); // Centro de la celda del paso.
-            float holgura = Mapa.TAM_CELDA / 2 - Math.abs(sobreEje - centroCelda) - Decoracion.LARGO_PASO / 2; // 0 si toca el borde.
-            assertEquals(donde, 0f, holgura, EPSILON); // Pegado al borde del cruce.
+            float holgura = Mapa.TAM_CELDA / 2 - Math.abs(sobreEje - centroCelda) - Decoracion.LARGO_PASO / 2; // Asfalto entre el paso y el cruce.
+            assertEquals(donde, Decoracion.SEPARACION_CRUCE, holgura, EPSILON); // No tapa la esquina: deja SEPARACION_CRUCE libre.
         }
         assertTrue(hayEjeX && hayEjeZ); // Hay pasos en ambas orientaciones.
     }
 
-    /** Cada paso está junto a un cruce con semáforo o a un parque; cada acceso con semáforo y cada parque tienen su paso. */
+    /**
+     * Cada paso está junto a un cruce controlado (semáforo o PARE) o a un parque; TODOS los accesos de los cruces
+     * controlados y cada parque tienen su paso. Se deriva del mapa: vale igual con 13 × 13.
+     */
     public void testDondeVanLosPasos() {
         for (float[] paso : Decoracion.UBICACIONES_PASOS) { // Revisa cada paso.
             int[] c = celda(paso); // Celda del paso.
@@ -65,11 +68,12 @@ public class PasosPeatonalesTest extends TestCase {
                 int f = c[0] + v[0]; // Fila vecina.
                 int col = c[1] + v[1]; // Columna vecina.
                 boolean dentro = f >= 0 && f < Mapa.MAPA.length && col >= 0 && col < Mapa.MAPA[0].length; // Dentro del mapa.
-                junto |= dentro && (esCruceConSemaforo(f, col) || Mapa.tipo(f, col) == Mapa.PARQUE); // Semáforo o parque.
+                junto |= dentro && (esCruceControlado(f, col) || Mapa.tipo(f, col) == Mapa.PARQUE); // Semáforo, PARE o parque.
             }
             assertTrue("paso sin motivo en " + paso[0] + "," + paso[1], junto); // Solo donde corresponde.
         }
-        for (int[] cruce : Senalizacion.INTERSECCIONES_SEMAFORO) { // Cruces con semáforo.
+        assertTrue(Decoracion.crucesControlados().size() > Senalizacion.INTERSECCIONES_SEMAFORO.size()); // También los de PARE.
+        for (int[] cruce : Decoracion.crucesControlados()) { // Cruces con semáforo o PARE.
             for (int[] acceso : Mapa.accesos(cruce[0], cruce[1])) { // Cada acceso.
                 float[] esperado = Decoracion.pasoEnAcceso(cruce[0], cruce[1], acceso[0], acceso[1]); // Paso que debería existir.
                 assertTrue(Decoracion.hayPasoSobre(esperado[0], esperado[1], 0.01f, 0.01f)); // Existe.
@@ -101,5 +105,19 @@ public class PasosPeatonalesTest extends TestCase {
             }
         }
         assertTrue(marcas > 100); // La línea central sigue existiendo fuera de los pasos.
+    }
+
+    /**
+     * El semáforo y el PARE quedan DETRÁS del paso (del lado de donde viene el auto), no sobre las franjas: el auto se
+     * detiene antes del paso. Se mide a lo largo de la calle, desde el borde del cruce.
+     */
+    public void testSenalesDetrasDelPaso() {
+        float finDelPaso = Decoracion.SEPARACION_CRUCE + Decoracion.LARGO_PASO; // Del borde del cruce al final del paso.
+        assertEquals(finDelPaso, Senalizacion.RETROCESO_SEMAFORO, EPSILON);
+        assertEquals(finDelPaso, Senalizacion.RETROCESO_PARE, EPSILON);
+        for (int[] pare : Senalizacion.UBICACIONES_PARE) { // Cada PARE tiene su paso delante.
+            float[] paso = Decoracion.pasoEnAcceso(pare[0], pare[1], pare[2], pare[3]);
+            assertTrue(Decoracion.hayPasoSobre(paso[0], paso[1], 0.01f, 0.01f));
+        }
     }
 }

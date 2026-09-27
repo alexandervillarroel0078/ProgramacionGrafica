@@ -34,8 +34,10 @@ public class Senalizacion {
     // ==================== 1. CONSTANTES DE FORMA Y UBICACIÓN (valores ajustables) ====================
     public static final int SECTOR_SEMAFOROS = 0; // Índice de Mapa.SECTORES donde van los semáforos: 0 = Centro.
     public static final float MARGEN_VEREDA = 0.6f; // Distancia del cordón (borde de la calle) al poste, hacia adentro de la vereda.
-    public static final float RETROCESO_SEMAFORO = Decoracion.LARGO_PASO; // El semáforo se para al borde del paso peatonal, donde frena el auto.
-    public static final float RETROCESO_PARE = MARGEN_VEREDA; // El PARE va en la misma esquina del cruce.
+    // El auto se detiene ANTES del paso peatonal (no sobre él): semáforo y PARE van detrás de las franjas, al final
+    // de la separación y del paso. Así el conductor mira la señal justo donde tiene que frenar.
+    public static final float RETROCESO_SEMAFORO = Decoracion.SEPARACION_CRUCE + Decoracion.LARGO_PASO; // 3.5 desde el borde del cruce.
+    public static final float RETROCESO_PARE = Decoracion.SEPARACION_CRUCE + Decoracion.LARGO_PASO; // Igual que el semáforo.
     public static final float ALTURA_POSTE = 2.6f; // Alto del poste: la placa queda por encima del techo del auto.
     public static final float GROSOR_POSTE = 0.1f; // Sección cuadrada del poste.
     public static final float LADO_PARE = 0.9f; // Ancho total del octógono rojo del PARE.

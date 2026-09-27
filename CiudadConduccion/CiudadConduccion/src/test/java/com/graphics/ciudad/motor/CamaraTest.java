@@ -243,4 +243,52 @@ public class CamaraTest extends TestCase {
         assertTrue(Math.abs(camara.getCentroX()) <= Mapa.LIMITE + 1e-4f); // El centro no sale de la ciudad.
         assertTrue(Math.abs(camara.getCentroZ()) <= Mapa.LIMITE + 1e-4f);
     }
+
+    /**
+     * La aérea nunca queda dentro de un edificio: con la distancia y la elevación mínimas el ojo baja a ≈ 6.8, y las
+     * torres llegan a ≈ 37. Se recorre la ciudad con el botón derecho, girando en cada fila, y cada vez que el ojo cae
+     * sobre una manzana con edificio debe quedar por encima de su techo.
+     */
+    public void testAereaNoEntraEnLosEdificios() {
+        Camara camara = new Camara(Mapa.LIMITE);
+        camara.alternar(); // Orbital.
+        camara.alternar(); // Aérea.
+        camara.arrastrar(0, 100000); // Elevación mínima.
+        camara.zoom(1000); // Distancia mínima.
+        int sobreEdificios = 0; // Cuántas veces el ojo cayó sobre un edificio.
+        camara.desplazar(1e7, 1e7); // Empieza en una esquina.
+        for (int fila = 0; fila < 40; fila++) {
+            camara.arrastrar(97, 0); // Otro ángulo en cada fila.
+            for (int paso = 0; paso < 40; paso++) {
+                camara.desplazar(fila % 2 == 0 ? -90 : 90, 0); // Avanza por la fila.
+                float[] ojo = camara.ojoAereo();
+                int f = Mapa.indiceCelda(ojo[2]);
+                int c = Mapa.indiceCelda(ojo[0]);
+                if (f >= 0 && f < Mapa.MAPA.length && c >= 0 && c < Mapa.MAPA.length && Mapa.tipo(f, c) == Mapa.EDIFICIO) {
+                    sobreEdificios++;
+                    float techo = com.graphics.ciudad.mundo.Edificio.alturaTotal(f, c);
+                    assertTrue("ojo a " + ojo[1] + " sobre techo " + techo, ojo[1] >= techo + Camara.MARGEN_TECHO - 1e-4f);
+                }
+            }
+            camara.desplazar(0, 90); // Siguiente fila.
+        }
+        assertTrue("el recorrido no pasó sobre edificios", sobreEdificios > 20); // La prueba revisó casos reales.
+    }
+
+    /** Las marcas del minimapa quedan por encima del edificio más alto y dentro de la profundidad del shader (100). */
+    public void testMarcasDelMinimapaSobreLosEdificios() {
+        float maximo = com.graphics.ciudad.mundo.Edificio.ALTURA_MAXIMA;
+        assertTrue(com.graphics.ciudad.juego.Minimapa.ALTURA_DIVISION > maximo);
+        assertTrue(com.graphics.ciudad.juego.Minimapa.ALTURA_DESTINO > com.graphics.ciudad.juego.Minimapa.ALTURA_DIVISION);
+        assertTrue(com.graphics.ciudad.juego.Minimapa.ALTURA_INDICADOR > com.graphics.ciudad.juego.Minimapa.ALTURA_DESTINO);
+        assertTrue(com.graphics.ciudad.juego.Minimapa.ALTURA_PUNTA < 100); // ESCALA_ALTURA_MAPA de ciudad.vert.
+    }
+
+    /** El plano lejano también cubre la punta de la torre más alta vista desde la aérea más lejana. */
+    public void testPlanoLejanoCubreLasTorres() {
+        Camara camara = new Camara(Mapa.LIMITE);
+        float horizontal = camara.getDistanciaAereaMax() + (float) Math.hypot(Mapa.TAMANO, Mapa.TAMANO); // Peor caso.
+        float conAltura = (float) Math.hypot(horizontal, com.graphics.ciudad.mundo.Edificio.ALTURA_MAXIMA); // Hasta la punta.
+        assertTrue(camara.getPlanoLejano() >= conAltura);
+    }
 }

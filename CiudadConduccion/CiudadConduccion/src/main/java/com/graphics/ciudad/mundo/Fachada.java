@@ -41,7 +41,7 @@ public class Fachada {
     public static final float[] PESOS_TONOS = {0.40f, 0.30f, 0.20f, 0.10f}; // Qué tan frecuente es cada tono (suman 1).
     public static final float[] COLOR_VIDRIO_DIA = {0.72f, 0.80f, 0.86f}; // Vidrio de día: blanco-celeste grisáceo, sin emisión.
     public static final float[] COLOR_VENTANA_APAGADA = {0.06f, 0.08f, 0.13f}; // Ventana apagada de noche: azul-gris muy oscuro.
-    public static final float PRIMER_PISO_Y = 1.7f; // Altura del centro de las ventanas del primer nivel (planta baja).
+    public static final float PRIMER_PISO_Y = 1.9f; // Centro de la fila de la planta baja; cada piso suma ALTO_PISO (4.9, 7.9...): antepecho de ≈ 0.7 sobre cada piso.
     // Cuántas ventanas, de qué tamaño y cada cuánto: TipoEdificio (columnasVentanas, separacionVentanas, anchoVentana,
     // altoVentana, alturaPiso). Los pisos se cuentan desde la acera para todo el edificio, así las filas de ventanas
     // de volúmenes vecinos quedan alineadas.
