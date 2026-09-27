@@ -25,7 +25,7 @@ La ciudad está definida por la matriz `MAPA` de [Mapa.java](src/main/java/com/g
 - **Valores de `MAPA`:** `0` = calle, `1` = edificio, `2` = parque.
 - **Calles:** las filas y columnas pares son calles continuas (6 avenidas horizontales y 6 verticales), por eso toda la red está conectada. `MapaTest` lo comprueba con un recorrido BFS.
 - **Manzanas:** las celdas con fila y columna impares son 25 manzanas: **19 edificios y 6 parques**.
-- **Edificios:** altura entre 5 y 13 (`Mapa.alturaEdificio`). El color varía según la fila y la columna.
+- **Edificios:** hay cinco tipos (torre, bloque, escalonado, casa baja y doble), con alturas de 3.2 a 22 y una paleta urbana de paredes y techos. Cada celda sortea su tipo y sus colores con un hash, así que la ciudad sale siempre igual (ver "Edificios: cinco tipos").
 
 Plano con leyenda (norte arriba; la primera fila es Z = -50 y la última Z = +50):
 
@@ -47,10 +47,10 @@ Plano con leyenda (norte arriba; la primera fila es Z = -50 y la última Z = +50
 | Símbolo | Significado |
 |---|---|
 | `·` | Calle (0) |
-| `E` | Manzana con edificio (1): acera y edificio con cubierta; planta baja comercial (vidriera, puerta centrada, vidriera y dos toldos) en cada cara a la calle y ventanas en los pisos superiores |
+| `E` | Manzana con edificio (1): acera y edificio de uno de los cinco tipos; planta baja comercial (vidriera, puerta centrada, vidriera y dos toldos) en cada cara a la calle y ventanas en los pisos superiores |
 | `P` | Parque (2): acera y césped con senderos en cruz, fuente central, 4 a 6 árboles (pinos y frondosos) y 2 a 4 bancos; pasos peatonales en sus calles vecinas |
 | `^` `v` `<` `>` | Farola en la vereda de esa manzana, del lado norte, sur, oeste o este; su brazo lleva la bombilla sobre la calle de ese lado. Son 13 en total (`Iluminacion.LUCES`) |
-| `A` | Salida del auto (-50, 50), mirando al norte (`Auto.X_INICIAL`, `Auto.Z_INICIAL`) |
+| `A` | Salida del auto (-47.5, 50), mirando al norte (`Auto.X_INICIAL`, `Auto.Z_INICIAL`): en el carril derecho de la calle del borde oeste, a `CARRIL_SALIDA` = 2.5 a la derecha de la línea amarilla (X = -50), igual que el tráfico. R lo devuelve ahí |
 | `1` `2` `3` | Entregas en orden (`Entregas.DESTINOS`): esquina noreste (50, -50), borde oeste (-50, -10) y borde sur-este (30, 50) |
 
 `MapaTest` verifica que todos los destinos y la salida caen sobre celdas de calle.
@@ -62,6 +62,29 @@ Las 13 están a mitad de cuadra, lejos de las esquinas donde están los semáfor
 - **Ubicación de la bombilla:** queda sobre el borde de la calle, en la punta del brazo.
 - **Sin conflictos:** respeta la separación con semáforos, PARE y carteles, y no hay farolas sobre pasos peatonales.
 - **Reparto y colisiones:** hay farolas en todos los sectores y las calles siguen transitables.
+
+### Edificios: cinco tipos
+
+Antes todos los edificios eran la misma caja con techo plano gris: solo cambiaban la altura y el color, y se veían clonados. Ahora `mundo/Edificio` elige para cada manzana un tipo (`TipoEdificio`) y lo arma con varios **volúmenes** (cajas con paredes) y **piezas de techo**:
+
+| Tipo | Forma | Alturas | Azotea o techo |
+|---|---|---|---|
+| `TORRE` | Podio de 7 × 7 con el negocio y, encima, una torre angosta de 4.4 × 4.4 | 16 a 22 | Antena (mástil de 3.5) o tanque de agua sobre cuatro patas, mitad y mitad |
+| `BLOQUE` | Una caja de 7 × 7, como el edificio de antes | 7 a 11 | Losa, baranda metálica en todo el borde y caja de ascensor corrida hacia una esquina |
+| `ESCALONADO` | 2 o 3 niveles apilados de 7, 5.2 y 3.6 de lado, cada uno apoyado en el de abajo | 4 a 5 por nivel | Una losa en cada nivel |
+| `CASA_BAJA` | Casa de 1 o 2 pisos (3.2 y 5.2 de pared) | Techo de 2 más | Techo a dos aguas: un prisma triangular color teja, con la cumbrera en X o en Z, y una chimenea |
+| `DOBLE` | La manzana se parte en dos volúmenes pegados: uno alto de 4 de ancho y uno bajo de 3, de otro color | 9 a 13 y 4 a 6 | Una losa en cada volumen |
+
+- **Siempre la misma ciudad:** el tipo, los colores, las alturas y la orientación de cada pieza salen de `Variacion.valor` con la fila, la columna y una semilla fija por decisión, sin `Random`. La misma celda da siempre el mismo edificio. `SEMILLA_TIPO` está elegida para que en este mapa los tipos salgan parejos: 4 torres, 4 bloques, 4 escalonados, 4 casas bajas y 3 dobles.
+- **Paleta urbana:** las paredes son ladrillo, crema, blanco hueso, gris cemento, terracota, verde agua o amarillo pálido (`PALETA_FACHADAS`). Los techos son gris oscuro, gris claro, teja o verde de terraza (`PALETA_TECHOS`); las casas bajas son siempre de teja.
+- **Misma huella:** el volumen de abajo ocupa siempre los 7 × 7 de la manzana y tiene al menos `ALTO_MINIMO_BASE` = 3.2, así que la planta baja comercial entra igual en todos los tipos. Nada pasa de `MEDIA_HUELLA` = 3.65 desde el centro (la losa sobresale `VUELO_CORNISA` = 0.15, como la cubierta de antes). Las colisiones, `Mapa.LIMITE`, el minimapa y los destinos de entrega no cambian.
+- **Dibujo:** `Ciudad` le pide a `Edificio` cada edificio. Las piezas se calculan una sola vez al crear la ciudad, y se dibujan con `Cubo` (paredes, losas, baranda, ascensor, patas, chimenea), el cilindro de `Figuras` (antena y tanque) y el prisma de `Figuras` (techo a dos aguas).
+
+`EdificioTest` comprueba:
+- **Determinismo:** la misma celda da siempre el mismo tipo, los mismos colores y las mismas piezas.
+- **Variedad:** hay al menos 4 tipos y 4 colores de pared, y no todos los techos son gris oscuro.
+- **Huella:** ninguna pieza sale de la huella de su manzana ni se hunde en la acera, y el volumen de abajo tiene altura para la planta baja.
+- **Forma:** la torre es angosta y alta, el escalonado se achica y cada nivel se apoya en el de abajo, la casa baja tiene techo de teja a dos aguas y el doble tiene dos alturas distintas.
 
 ### Edificios: planta baja y ventanas
 
@@ -77,22 +100,36 @@ Las fachadas las dibuja `mundo/Fachada`.
 | Margen de esquina (`MARGEN_ESQUINA`) | 0.4 |
 
 - **Puerta:** oscura, de 1 × 2 y **centrada**. Así ninguna puerta queda junto a una esquina y dos caras vecinas nunca tienen puertas pegadas.
-- **Vidrieras:** una a cada lado de la puerta, de 2.4 × 1.4. De día son vidrio celeste; de noche se ven iluminadas, cálidas y emisivas.
+- **Vidrieras:** una a cada lado de la puerta, de 2.4 × 1.4. De día son vidrio celeste. De noche se ven iluminadas desde adentro: son emisivas, cálidas y menos intensas que una placa blanca, con un degradado vertical, más claro abajo y más tenue arriba. Como `Cubo` pinta cada caja de un solo color, el degradado se arma con `FRANJAS_VIDRIERA` = 6 franjas horizontales cuyo color se interpola entre `COLOR_VIDRIERA_NOCHE_ABAJO` y `COLOR_VIDRIERA_NOCHE_ARRIBA` (`colorVidrieraNoche()`).
 - **Toldos:** uno sobre cada vidriera, 0.05 más ancho a cada lado, sin tapar la puerta ni pasar el margen de la esquina. Como `Cubo` solo gira alrededor del eje Y, la inclinación se arma con 3 tiras escalonadas y un faldón.
   - **Vuelo:** sobresalen 0.7, así que su borde queda a 4.2 del centro del edificio: sobre la vereda y antes de los postes de semáforo (4.4) y de farola (4.6). Nunca llegan a la calzada ni cambian colisiones.
   - **Color:** rojo, verde, azul o naranja, y en algunos edificios a rayas con blanco. Se elige por celda y siempre es el mismo.
 
+**Ventanas según el tipo.** `Fachada.ventanas()` recorre cada cara de cada volumen y reparte las ventanas con el patrón de su `TipoEdificio`:
+
+| Tipo | Columnas por cara | Ancho × alto | Altura de piso |
+|---|---|---|---|
+| `TORRE` | 4, juntas | 0.6 × 0.8 | 1.6: más filas |
+| `BLOQUE` | 2, anchas | 2.0 × 0.9 | 2 |
+| `ESCALONADO` | 3 | 0.9 × 1.0 | 2 |
+| `CASA_BAJA` | 2, pocas | 1.0 × 1.0 | 2 |
+| `DOBLE` | 3 | 0.8 × 0.9 | 2 |
+
+- **Caras angostas:** si las columnas no entran en una cara (por ejemplo, la parte baja de un doble), se usan menos, dejando `MARGEN_LATERAL` a cada lado.
+- **Pisos alineados:** los pisos se cuentan desde la acera para todo el edificio, así las filas de ventanas de volúmenes vecinos coinciden.
+- **Ventanas que no se ponen:** las que no entran entre la base y el tope de su volumen (`MARGEN_VERTICAL`), las que quedarían sobre el negocio o el toldo (por debajo de `TOPE_PLANTA_BAJA` en una cara a la calle) y las que tapa otro volumen del mismo edificio, como la parte baja de un doble o el nivel de abajo de un escalonado. Por eso una casa baja de un piso no tiene ventanas: toda su planta baja es negocio.
+
 **Ventanas según día y noche.**
 - **De día:** todas son vidrio claro, blanco-celeste grisáceo, sin emisión. El sol las ilumina como a cualquier superficie.
-- **De noche:** alrededor del 65 % está encendida (`PORCENTAJE_VENTANAS_ENCENDIDAS`); hoy son 491 de 732 (67 %).
+- **De noche:** alrededor del 65 % está encendida (`PORCENTAJE_VENTANAS_ENCENDIDAS`); hoy son 633 de 979 (65 %).
   - **Encendidas:** emisivas, con tonos de `TONOS_VENTANA`: amarillo cálido 40 %, blanco cálido 30 %, anaranjado suave 20 % y blanco frío 10 %.
   - **Apagadas:** azul-gris muy oscuro.
-- **Sin parpadeo:** cada ventana decide con un hash de edificio, cara, piso y columna (`Variacion.valor`, sin `Random`), así que la misma ventana siempre está igual.
+- **Sin parpadeo:** cada ventana decide con un hash de edificio, volumen, cara, piso y columna (`Variacion.valor`, sin `Random`), así que la misma ventana siempre está igual.
 - **Estado día/noche:** se lee de `Iluminacion.esNoche()` y no se duplica.
 
 `FachadaTest` comprueba:
-- **Ventanas:** cada una tiene siempre el mismo estado; de noche la fracción encendida queda dentro de ±10 % y aparecen todos los tonos; de día ninguna es emisiva.
-- **Planta baja:** ninguna puerta está a menos de `MARGEN_ESQUINA` de una esquina y las puertas de caras vecinas nunca comparten esquina. Además, las vidrieras y los toldos entran en la cara sin tapar la puerta.
+- **Ventanas:** cada una tiene siempre el mismo estado; de noche la fracción encendida queda dentro de ±10 % y aparecen todos los tonos; de día ninguna es emisiva. Además, cada ventana queda dentro de su volumen, nunca sobre el negocio ni tapada por otro volumen, y el patrón cambia con el tipo.
+- **Planta baja:** ninguna puerta está a menos de `MARGEN_ESQUINA` de una esquina y las puertas de caras vecinas nunca comparten esquina. Además, las vidrieras y los toldos entran en la cara sin tapar la puerta, y de noche cada franja de la vidriera es igual o más tenue que la de abajo, todas menos intensas que la placa de antes.
 - **Toldos:** su vuelo no llega a la calzada y se usan todos los colores, lisos y a rayas.
 
 ### Parques
@@ -165,6 +202,7 @@ Además del cubo, la ciudad usa tres mallas creadas con seno y coseno, sin imág
 | Esfera (12 × 8) | Como un globo terráqueo: 8 franjas de latitud × 12 meridianos, y cada punto es (sen θ cos φ, cos θ, sen θ sen φ) · 0.5 | La dirección del centro al punto: en una esfera es perpendicular a la superficie | 6 · 12 · 7 = 504 |
 | Cilindro (10 lados) | Un polígono de 10 lados arriba y otro abajo, unidos por rectángulos, más dos tapas en abanico | En el costado, horizontal hacia afuera (cos φ, 0, sen φ); en las tapas, (0, ±1, 0). Los bordes se repiten con otra normal porque ahí hay una arista | 12 · 10 = 120 |
 | Cono (10 lados) | Triángulos de la base a la punta, más la base en abanico | En el costado, (h cos φ, r, h sen φ) normalizada: el producto vectorial entre la recta que sube a la punta y el borde. En la punta se usa el ángulo medio de cada triángulo. En la base, (0, -1, 0) | 6 · 10 = 60 |
+| Prisma triangular (`Figuras.prisma`) | El perfil `PERFIL_PRISMA` (un triángulo de base 1 y alto 1) extruido con `Malla.extruir` a 1 de ancho. Escalado, es el techo a dos aguas de las casas bajas | Una por cara, como la extrusión: dos faldones inclinados, la base y las dos tapas triangulares | 12 · 3 − 12 = 24 |
 | Extrusión de perfil (`Malla.extruir(perfil, ancho)`) | Un contorno 2D visto de costado (puntos {z, y} en orden, convexo) se "estira" a lo ancho en X: dos tapas con la forma del perfil (en abanico) y un rectángulo por cada lado del contorno que las une | Una por cara (flat shading): el producto cruz de dos lados del triángulo, normalizado; si apunta hacia el centro de la figura se invierte, así todas miran hacia afuera. Las aristas quedan marcadas, como en una carrocería | 12 · n − 12 (36 para 4 puntos) |
 
 Como cada vértice lleva la normal de la superficie curva y no la de su triángulo plano, OpenGL la interpola y la iluminación las muestra redondeadas. `ciudad.vert` corrige las normales con la inversa de la escala, así que siguen siendo correctas al estirar una figura, por ejemplo una copa achatada. `Juego` crea y libera las figuras igual que el cubo. Cada malla enlaza su propio VAO al dibujar, y `Cubo` también, para poder mezclarlas en la misma escena.
@@ -187,8 +225,11 @@ Como cada vértice lleva la normal de la superficie curva y no la de su triángu
 | A / ← y D / → | Girar (solo con el auto en movimiento; en reversa el giro se invierte) |
 | Espacio | Freno fuerte |
 | C | Cambiar de cámara: seguimiento → orbital del auto → aérea de toda la ciudad → seguimiento |
-| Mouse, botón izquierdo | En la cámara orbital: arrastrar para girar alrededor del auto (horizontal) y subir o bajar la cámara (vertical) |
-| Ruedita del mouse | En la cámara orbital: acercar y alejar |
+| Mouse, botón izquierdo | En la cámara orbital: arrastrar para girar alrededor del auto (horizontal) y subir o bajar la cámara (vertical). En la aérea: lo mismo, pero alrededor del punto de la ciudad que se está mirando |
+| Ruedita del mouse | En la orbital y en la aérea: acercar y alejar (en la aérea, alejada al máximo se ve toda la ciudad) |
+| Mouse, botón derecho | En la aérea: arrastrar para desplazar el punto que se mira, como si se arrastrara el suelo con la mano; nunca sale de la ciudad |
+
+En la cámara de seguimiento el mouse no hace nada. Cada vez que se entra a la aérea, arranca con la vista general de siempre (la de las capturas).
 | N | Alternar día / noche |
 | F | Encender / apagar los faros del auto: los conos de luz sobre la calle, las bombillas delanteras (blancas y emisivas) y las luces de posición traseras (rojo tenue) |
 | M | Mostrar / ocultar el minimapa |
@@ -210,18 +251,21 @@ Paquete `com.graphics.ciudad`:
 |---|---|
 | `Main` | Punto de entrada: crea `Juego` y llama a `ejecutar()`. |
 | `Juego` | Ciclo principal entrada → `actualizar(dt)` → dibujar, con dt limitado a 50 ms y llevado a 0 en menú o pausa. Reparte las teclas, compone el título, lleva el reloj global de la animación, impide que el jugador atraviese el tráfico, fija el orden de dibujo (ciudad, auto, tráfico, farolas, decoración, destino, minimapa, HUD) y libera los recursos. |
-| `motor/Ventana` | Ventana GLFW y contexto OpenGL 3.3 Core, callback de teclado, `pulsada()`, tamaño real del framebuffer, título, presentación y cierre, y callbacks de mouse (botón, cursor y ruedita) que entregan arrastres y zoom a la cámara. |
+| `motor/Ventana` | Ventana GLFW y contexto OpenGL 3.3 Core, callback de teclado, `pulsada()`, tamaño real del framebuffer, título, presentación y cierre, y callbacks de mouse (botones izquierdo y derecho, cursor y ruedita) que entregan a la cámara los arrastres de cada botón y el zoom. |
 | `motor/Shader` | Carga GLSL desde `resources/shaders`, normaliza `#version` para Windows, compila, enlaza y envía uniforms (`vector2`, `vector`, `vector4`, `decimal`, `entero`, `matriz3`) con caché de ubicaciones. |
 | `motor/Cubo` | Cubo de 36 vértices con normales en un VAO/VBO; `caja()` y `cajaGirada()` lo dibujan con posición, escala, giro y color. |
-| `motor/Camara` | Tres modos con C: seguimiento (12 unidades detrás del auto), orbital del auto (coordenadas esféricas ángulo, elevación y distancia, relativas al auto y manejadas con el mouse) y vista aérea de la ciudad, cuyo radio y altura son proporcionales a `Mapa.LIMITE`. |
+| `motor/Camara` | Tres modos con C: seguimiento (12 unidades detrás del auto), orbital del auto y vista aérea de la ciudad. Las dos últimas se manejan con el mouse y usan cada una su `Orbita`: la del auto, centrada en el auto y relativa a su ángulo; la aérea, centrada en un punto de la ciudad que el botón derecho desplaza (`desplazar()`, limitado a ±`Mapa.LIMITE`). Al entrar a la aérea vuelve a la vista inicial, proporcional a `Mapa.LIMITE`. |
+| `motor/Orbita` | Coordenadas esféricas compartidas por las dos cámaras con mouse: ángulo θ, elevación φ y distancia D alrededor de un centro, con sus límites. `girar()`, `acercar()`, `colocar()` y `ojo()`, que convierte (θ, φ, D) en la posición (D · cos φ · sen θ, D · sen φ, D · cos φ · cos θ) + centro. |
 | `motor/Texto` | Convierte texto en rectángulos con STBEasyFont; lo usan el HUD (2D) y los carteles de sector (3D). |
 | `motor/Malla` | Figura genérica en un VAO/VBO con el mismo formato que `Cubo` (posición + normal). Generadores por fórmulas: `esfera(sectores, anillos)` (esfera UV), `cilindro(lados)` con tapas y `cono(lados)` con base, todos unitarios. `dibujar()` / `dibujarGirada()` funcionan como `caja()` / `cajaGirada()`.. `extruir(perfil, ancho)` genera una figura extruida desde un perfil 2D con normales por cara (producto cruz). |
-| `motor/Figuras` | Crea la esfera (12 × 8), el cilindro (10 lados) y el cono (10 lados), los sube a la GPU y los libera, igual que `Cubo`. |
-| `mundo/Mapa` | `MAPA` 11 × 11, intersecciones (`esInterseccion`, `intersecciones`), accesos (`accesos`), parques (`parques`), `sectorDeCelda`, `TAM_CELDA`, `TAMANO`, `LIMITE`, `centro()`, `indiceCelda()`, `esCalle()`, `esCalleEn()`, `alturaEdificio()`, y los cinco sectores con nombre (`SECTORES`, `NOMBRES_SECTORES`, `sector()`, `nombreSector()`). |
-| `mundo/Ciudad` | Base de asfalto, líneas amarillas entre cruces, aceras, edificios con cubierta y césped de los parques. |
+| `motor/Figuras` | Crea la esfera (12 × 8), el cilindro (10 lados), el cono (10 lados) y el prisma triangular del techo a dos aguas, los sube a la GPU y los libera, igual que `Cubo`. |
+| `mundo/Mapa` | `MAPA` 11 × 11, intersecciones (`esInterseccion`, `intersecciones`), accesos (`accesos`), parques (`parques`), `sectorDeCelda`, `TAM_CELDA`, `TAMANO`, `LIMITE`, `centro()`, `indiceCelda()`, `esCalle()`, `esCalleEn()`, y los cinco sectores con nombre (`SECTORES`, `NOMBRES_SECTORES`, `sector()`, `nombreSector()`). |
+| `mundo/Ciudad` | Base de asfalto, líneas amarillas entre cruces, aceras, edificios (delegados en `Edificio`) y césped de los parques. |
+| `mundo/Edificio` | Elige el tipo y los colores de cada edificio con `Variacion` (`tipo()`, `colorPared()`, `colorTecho()`), arma sus volúmenes (`volumenes()`) y las piezas del techo (`piezas()`: losas, baranda, ascensor, antena, tanque, techo a dos aguas y chimenea), y las dibuja. Tiene la paleta urbana y las alturas por tipo. |
+| `mundo/TipoEdificio` | Enum con los cinco tipos (`TORRE`, `BLOQUE`, `ESCALONADO`, `CASA_BAJA`, `DOBLE`) y el patrón de ventanas de cada uno. |
 | `mundo/Decoracion` | Fachadas de los edificios (delegadas en `Fachada`) y los pasos peatonales de `UBICACIONES_PASOS` (un paso por acceso de cada cruce con semáforo y hasta dos junto a cada parque, en ambas orientaciones); `hayPasoSobre()` permite que `Ciudad` corte la línea amarilla. Delega los parques en `Parque` y la señalización en `Senalizacion`. |
-| `mundo/Fachada` | Planta baja comercial en las caras a la calle: vidriera, puerta centrada y vidriera, con un toldo escalonado de color (a veces a rayas) sobre cada vidriera; las vidrieras se iluminan de noche. Ventanas de los pisos superiores: vidrio claro de día; de noche, ≈65 % encendidas con tonos variados, decidido por ventana con un hash. |
-| `mundo/Variacion` | Hash determinístico `valor(fila, columna, índice, semilla)` que usan `Parque` y `Fachada` para variar sin azar por cuadro. |
+| `mundo/Fachada` | Planta baja comercial en las caras a la calle: vidriera, puerta centrada y vidriera, con un toldo escalonado de color (a veces a rayas) sobre cada vidriera; las vidrieras se iluminan de noche. Ventanas en cada volumen según el patrón del tipo (`ventanas()`), sin tapar el negocio ni quedar dentro de otro volumen: vidrio claro de día; de noche, ≈65 % encendidas con tonos variados, decidido por ventana con un hash. |
+| `mundo/Variacion` | Hash determinístico `valor(fila, columna, índice, semilla)` que usan `Parque`, `Fachada` y `Edificio` para variar sin azar por cuadro. |
 | `mundo/Parque` | Senderos en cruz, fuente central, 4 a 6 árboles (frondosos de esferas y pinos de conos) y 2 a 4 bancos mirando a la fuente. `arboles()` y `bancos()` calculan la disposición de cada parque con `variacion()` (determinística). |
 | `mundo/Senalizacion` | Ubica y dibuja la señalización vial: `INTERSECCIONES_SEMAFORO` (las del Centro), un cabezal por acceso (`SEMAFOROS`), `UBICACIONES_PARE` y `CARTELES_SECTOR`. `esquinaDerecha()` calcula la esquina de vereda a la derecha de un acceso y la orientación hacia el auto. |
 | `mundo/Semaforo` | Ciclo rojo (7 s) → verde (5 s) → amarillo (2 s) en bucle; `luzParaAcceso()` desfasa el grupo este-oeste 7 s para que sea complementario del norte-sur. Dibuja un cabezal orientado hacia su acceso; solo la luz activa brilla. |
@@ -250,13 +294,15 @@ Pruebas en `src/test/java/com/graphics/ciudad`:
 
 - `MapaTest`: límites 110/55, al menos 12 edificios y 4 parques, calles conectadas (BFS) y posiciones sobre calles.
 - `ColisionesTest`: calles transitables y obstáculos.
-- `AutoTest`: `reset()` del auto; recorrer 2π · `RADIO_RUEDA` gira la rueda 2π (y negativo en reversa); las ruedas delanteras nunca pasan `ANGULO_MAX_DIRECCION` y vuelven a 0 al soltar; luces de freno (S hacia adelante o Espacio) y de reversa según velocidad y teclas.
-- `CamaraTest`: C recorre los tres modos; la elevación y la distancia de la cámara orbital nunca salen de sus límites; fuera del modo orbital el mouse no mueve la cámara.
+- `AutoTest`: `reset()` del auto, que lo deja en el carril derecho (a la derecha del centro de su calle, sin tocar la línea amarilla ni la vereda); recorrer 2π · `RADIO_RUEDA` gira la rueda 2π (y negativo en reversa); las ruedas delanteras nunca pasan `ANGULO_MAX_DIRECCION` y vuelven a 0 al soltar; luces de freno (S hacia adelante o Espacio) y de reversa según velocidad y teclas.
+- `CamaraTest`: C recorre los tres modos; la elevación y la distancia de la cámara orbital nunca salen de sus límites; en la aérea, la elevación, la distancia y el centro nunca salen de los suyos (y llegan justo al tope); la aérea arranca con la vista de siempre cada vez que se entra; en seguimiento el mouse no hace nada y en la orbital el botón derecho tampoco, ni se toca la aérea; `PLANO_LEJANO` de `ciudad.vert` alcanza para la aérea alejada al máximo con el centro en una esquina.
+- `OrbitaTest`: la posición sale de las coordenadas esféricas (distancia al centro = D, altura = D · sen φ, ángulo horizontal = base + θ) y φ y D nunca salen de sus límites.
 - `EntregasTest`: 3 entregas, `reset()`, progreso en 0 y primer destino otra vez activo.
 - `MallaTest`: esfera, cilindro y cono tienen la cantidad de vértices esperada (504, 120 y 60), normales de largo 1 y dentro del cubo unitario; la esfera tiene normales radiales, el cilindro horizontales en el costado y verticales en las tapas, y el cono tiene la inclinación correcta; la extrusión de un perfil de 4 puntos tiene 36 vértices, normales unitarias hacia afuera (con el contorno en cualquier sentido de giro), iguales en los tres vértices de cada triángulo, y tapas mirando a ±X.
 - `CabinaTest`: base más larga que el techo, parabrisas más inclinado que la luneta, misma altura aproximada que el bloque anterior, nada fuera del ancho del cuerpo, y ventanillas dentro de la cabina y a cada lado del parante central.
 - `ParqueTest`: 4 a 6 árboles por parque, con el centro libre, copa ≤ 1/4 del parque y dentro de la celda; 2 a 4 bancos mirando a la fuente; parques distintos entre sí, con pinos y frondosos; las calles siguen transitables.
-- `FachadaTest`: cada ventana tiene siempre el mismo estado; de noche, la fracción encendida está dentro de ±10 % de `PORCENTAJE_VENTANAS_ENCENDIDAS` y aparecen todos los tonos; de día ninguna ventana es emisiva; vidrieras y toldos entran en la cara con `MARGEN_ESQUINA` y no tapan la puerta; ninguna puerta está a menos de `MARGEN_ESQUINA` de una esquina y las puertas de caras vecinas nunca comparten esquina; el toldo no llega a la calzada y se usan todos los colores, lisos y a rayas.
+- `EdificioTest`: la misma celda da siempre el mismo tipo, colores y piezas; hay al menos 4 tipos y 4 colores de pared, y no todos los techos son gris oscuro; ninguna pieza sale de la huella de su manzana (`MEDIA_HUELLA`) ni se hunde en la acera; cada tipo respeta su forma (torre angosta y alta, escalonado que se achica, casa con techo de teja a dos aguas, doble con dos alturas).
+- `FachadaTest`: cada ventana tiene siempre el mismo estado; cada ventana queda dentro de su volumen, nunca sobre el negocio ni tapada por otro volumen; el patrón de ventanas cambia con el tipo; de noche, la fracción encendida está dentro de ±10 % de `PORCENTAJE_VENTANAS_ENCENDIDAS` y aparecen todos los tonos; de día ninguna ventana es emisiva; vidrieras y toldos entran en la cara con `MARGEN_ESQUINA` y no tapan la puerta; ninguna puerta está a menos de `MARGEN_ESQUINA` de una esquina y las puertas de caras vecinas nunca comparten esquina; el toldo no llega a la calzada y se usan todos los colores, lisos y a rayas.
 - `SemaforoTest`: orden y duraciones del ciclo; en dos ciclos completos, los accesos opuestos siempre muestran el mismo color y norte-sur y este-oeste nunca están a la vez en verde o amarillo.
 - `SenalizacionTest`: semáforos solo en las 4 intersecciones del Centro, uno por acceso, a la derecha y mirando al auto; 6 a 10 PARE en cruces sin semáforo, a la derecha y mirando al auto; un cartel por sector dentro de su sector; ningún semáforo, PARE ni cartel sobre la calle, y las calles siguen transitables.
 - `PasosPeatonalesTest`: cada paso está sobre calle, en la celda vecina a una intersección y pegado a su borde, con `LARGO_PASO` en el sentido de circulación y de vereda a vereda; hay pasos en ambas orientaciones; cada paso está junto a un cruce con semáforo o a un parque; cada acceso con semáforo y cada parque tienen su paso; ninguna marca amarilla queda debajo.
@@ -270,10 +316,12 @@ Pruebas en `src/test/java/com/graphics/ciudad`:
 
 | Mejora | Qué hace | Dónde |
 |---|---|---|
+| Edificios variados | Cinco tipos de edificio (torre con antena o tanque, bloque con baranda y ascensor, escalonado, casa baja con techo de teja a dos aguas y doble), elegidos por celda con un hash, con una paleta urbana de paredes y techos y ventanas según el tipo. Respetan la huella de la manzana: las colisiones no cambian. | `mundo/Edificio`, `mundo/TipoEdificio`, `mundo/Fachada`, `motor/Figuras` |
 | Figuras redondeadas y parques | Mallas nuevas generadas por fórmulas (esfera, cilindro y cono) con normales suaves, para que la luz del sol, las farolas y los faros las muestren redondeadas. Los parques tienen senderos, fuente, árboles frondosos y pinos, y bancos, con variación determinística entre parques. | `motor/Malla`, `motor/Figuras`, `mundo/Parque` |
 | Auto mejorado | Ruedas cilíndricas con llanta, rayos y una marca roja que gira según la distancia recorrida; delanteras que doblan con A/D; luces de freno (rojo intenso) y de reversa (blanca), emisivas, de día y de noche. Las bombillas siguen a la tecla F: con F, faros blancos emisivos y luces de posición traseras en rojo tenue; sin F, apagadas (el freno sigue funcionando). Resuelve la limitación original "no hay ruedas animadas". | `vehiculo/Auto`, `vehiculo/LucesVehiculo`, `ciudad.vert` (`uRotacion`) |
 | Cabina con forma | La cabina deja de ser un bloque celeste: es un trapecio extruido desde un perfil lateral (`Malla.extruir`), con parabrisas y luneta inclinados, dos ventanillas por lado y un parante central, del color de cada auto. | `motor/Malla`, `vehiculo/Cabina`, `vehiculo/Auto`, `trafico/Vehiculo` |
 | Cámara orbital del auto | Nuevo modo de C: la cámara gira alrededor del auto con el mouse (arrastrar = girar y elevar, ruedita = zoom), con límites de elevación (5° a 85°) y de distancia (4 a 30); acompaña al auto cuando dobla y se puede seguir manejando. No afecta al minimapa ni al HUD. | `motor/Camara`, `motor/Ventana` |
+| Cámara aérea con mouse | La vista aérea deja de ser fija: con el botón izquierdo se gira alrededor de la ciudad y se cambia la elevación (20° a 85°), con la ruedita se acerca y aleja (20 a 2.6 límites, donde se ve toda la ciudad) y con el botón derecho se desplaza el punto que se mira, sin salir de la ciudad. Reutiliza la matemática de la orbital del auto (clase `Orbita`) y al entrar arranca con la vista de siempre. No cambia el minimapa ni el HUD (solo la ayuda H). | `motor/Orbita`, `motor/Camara`, `motor/Ventana`, `interfaz/Hud`, `ciudad.vert` (`PLANO_LEJANO`) |
 | Flecha sobre el auto | En la vista aérea (tecla C), una flecha cian emisiva a 6 unidades de altura apunta al auto, sube y baja y gira despacio; se ve también de noche. No aparece en la cámara de seguimiento ni en el minimapa. | `vehiculo/IndicadorJugador`, `motor/Camara.esAerea`, `Juego` |
 | Luces del tráfico | Los vehículos encienden sus luces solos de noche (tecla N) y las apagan de día; la tecla F solo afecta los faros del jugador. Encendidas, los faros son blancos y las traseras rojas, ambas emisivas; apagadas se ven gris oscuro y rojo oscuro. De noche cada vehículo proyecta dos focos reales sobre la calle, con el mismo cono (`smoothstep`) y atenuación que los del jugador, pero más débiles y cortos. El estado día/noche se lee de `Iluminacion` (no está duplicado). | `trafico/Vehiculo`, `trafico/Trafico.prepararFaros`, `iluminacion.frag` (`aporteFoco`) |
 | Tráfico autónomo | Cuatro vehículos (amarillo, azul, verde y blanco) recorren rutas cíclicas con giros, en los sectores noroeste, noreste, sureste (con forma de L) y suroeste. Circulan por el carril derecho de su sentido, a `DESPLAZAMIENTO_CARRIL` (2.5) de la línea amarilla. Las rutas 1 y 4 comparten la calle Z = -10 en sentidos opuestos. En cada esquina pasan al carril del tramo siguiente girando suavemente, sin cruzar la línea central de su calle, y frenan en las curvas. Las rutas se validan contra el Mapa, así que nunca atraviesan edificios ni salen de la ciudad. De noche se ven sus luces traseras. Se detienen si el jugador les cierra el paso, y el jugador no puede atravesarlos (círculo contra círculo). R los reinicia. | `trafico/Vehiculo`, `trafico/Trafico`, `vehiculo/Colisiones`, `Juego` |
@@ -332,15 +380,17 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | Ruedas y dirección | `vehiculo/Auto.java` | `RADIO_RUEDA` (0.32), `ANCHO_RUEDA` (0.24), `FRACCION_LLANTA` (0.62), `ANGULO_MAX_DIRECCION` (30°), `VELOCIDAD_DIRECCION` (3 rad/s), `COLOR_NEUMATICO`, `COLOR_LLANTA`, `COLOR_MARCA_LLANTA` |
 | Luces del auto: faros, posición y freno | `vehiculo/LucesVehiculo.java` (compartidas con el tráfico) | `COLOR_FARO_ENCENDIDO` (blanco cálido, emisivo), `COLOR_FARO_APAGADO` (gris-beige oscuro), `COLOR_POSICION` (rojo tenue, emisivo), `COLOR_FRENO` (rojo intenso, emisivo), `COLOR_TRASERA_APAGADA` (rojo oscuro), `LADO_LUZ` (0.55), `ALTURA_LUZ` (0.68), `FRENTE_LUZ` (-1.32), `TRASERA_LUZ` (1.32), `TAMANO_FARO`, `TAMANO_TRASERA` |
 | Luz de reversa | `vehiculo/Auto.java` | `COLOR_REVERSA_APAGADA`, `COLOR_REVERSA` (blanca, emisiva), `UMBRAL_MOVIMIENTO` (0.1) |
-| Cámara orbital del auto | `motor/Camara.java` | `ANGULO_INICIAL` (0 = detrás), `ELEVACION_INICIAL` (25°), `DISTANCIA_INICIAL` (9), `ELEVACION_MIN` / `ELEVACION_MAX` (5° / 85°), `DISTANCIA_MIN` / `DISTANCIA_MAX` (4 / 30), `SENSIBILIDAD_GIRO` (0.008 rad/px), `SENSIBILIDAD_ELEVACION` (0.006 rad/px), `PASO_ZOOM` (1) |
-| Punto de partida | `vehiculo/Auto.java` | `X_INICIAL`, `Z_INICIAL` (sobre una calle) |
+| Cámara orbital del auto | `motor/Camara.java` | `ANGULO_INICIAL` (0 = detrás), `ELEVACION_INICIAL` (25°), `DISTANCIA_INICIAL` (9), `ELEVACION_MIN` / `ELEVACION_MAX` (5° / 85°), `DISTANCIA_MIN` / `DISTANCIA_MAX` (4 / 30), `PASO_ZOOM` (1) |
+| Sensibilidad del mouse (orbital y aérea) | `motor/Camara.java` | `SENSIBILIDAD_GIRO` (0.008 rad/px), `SENSIBILIDAD_ELEVACION` (0.006 rad/px) |
+| Punto de partida | `vehiculo/Auto.java` | `X_INICIAL` (centro de la calle + `CARRIL_SALIDA`), `Z_INICIAL` (sobre una calle); `CARRIL_SALIDA` (2.5, como el carril del tráfico) |
 | Tiempos del semáforo | `mundo/Semaforo.java` | `DURACION_VERDE` (5), `DURACION_AMARILLO` (2); `DURACION_ROJO` se calcula como verde + amarillo (7) y `DESFASE_ESTE_OESTE` = rojo, para mantener la coordinación; `BRILLO_APAGADA` (0.15) |
 | Dónde hay semáforos | `mundo/Senalizacion.java` | `SECTOR_SEMAFOROS` (0 = Centro): todas las intersecciones de ese sector forman `INTERSECCIONES_SEMAFORO`; `RETROCESO_SEMAFORO` (= `LARGO_PASO`), `MARGEN_VEREDA` (0.6) |
 | Agregar o mover una entrega | `juego/Entregas.java` | `DESTINOS` `{x, z}` sobre calle y su nombre en `NOMBRES_DESTINOS` |
 | Qué tan cerca y lento hay que llegar | `juego/Entregas.java` | `RADIO_LLEGADA` (3), `VELOCIDAD_LLEGADA` (1) |
 | Tamaño del minimapa | `juego/Minimapa.java` | `TAMANO_MAX_MINIMAPA` (260 px), `MARGEN_MINIMAPA` (18 px), `BORDE_MINIMAPA` (3 px), `MARGEN_MAPA` (zoom), `ESCALA_INDICADOR` (1.5) |
 | Cámara de seguimiento | `motor/Camara.java` | `DISTANCIA_SEGUIMIENTO` (12), `ALTURA_SEGUIMIENTO` (9), `ALTURA_OBJETIVO` (0.8) |
-| Cámara aérea | `motor/Camara.java` | `FACTOR_RADIO` (1.86), `FACTOR_ALTURA` (1.57), proporcionales a `Mapa.LIMITE` |
+| Vista inicial de la cámara aérea | `motor/Camara.java` | `ANGULO_AEREO_INICIAL` (0.6 rad), `FACTOR_RADIO` (1.86), `FACTOR_ALTURA` (1.57), proporcionales a `Mapa.LIMITE`: la cámara arranca a 1.86 límites del centro sobre el suelo y 1.57 de altura (≈ 40° de elevación y 134 de distancia) |
+| Mouse en la cámara aérea | `motor/Camara.java` | `ELEVACION_AEREA_MIN` / `ELEVACION_AEREA_MAX` (20° / 85°), `DISTANCIA_AEREA_MIN` (20), `FACTOR_DISTANCIA_AEREA_MAX` (2.6: la distancia máxima es 2.6 · `Mapa.LIMITE` = 143, algo más que la vista inicial; si se sube, subir también `PLANO_LEJANO`), `PASO_ZOOM_AEREO` (6 por paso de ruedita), `SENSIBILIDAD_DESPLAZAMIENTO` (0.0015 por píxel y por unidad de distancia: lejos, el botón derecho mueve más rápido) |
 | Rutas del tráfico | `trafico/Trafico.java` | `RUTAS_CELDAS`: listas cíclicas de cruces `{fila, columna}` (pares); cada tramo debe ir en línea recta por calle, o el juego se detiene al arrancar con un mensaje |
 | Velocidad y color de los vehículos | `trafico/Trafico.java` | `VELOCIDADES` (7, 6, 8, 6.5), `COLORES` |
 | Manejo del tráfico | `trafico/Vehiculo.java` | `VELOCIDAD_GIRO` (2.2 rad/s), `RADIO_WAYPOINT` (2), `FRACCION_MINIMA_CURVA` (0.3), `DISTANCIA_PRECAUCION` (6), `DISTANCIA_ANTICIPACION` (4) |
@@ -354,11 +404,21 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | PARE | `mundo/Senalizacion.java` | `UBICACIONES_PARE` (`{fila, columna, dFila, dColumna}`: cruce sin semáforo y acceso), `LADO_PARE` (0.9), `BORDE_PARE` (0.07), `ALTURA_POSTE` (2.6) |
 | Carteles de sector | `mundo/Senalizacion.java` | `CARTELES_SECTOR` (`{sector, x, z, ángulo}`, sobre vereda), `ANCHO_CARTEL` (2.6), `ALTO_CARTEL` (0.8), `BORDE_CARTEL` (0.08), `ALTURA_CARTEL` (2.4), `COLOR_CARTEL` |
 | Pasos peatonales | `mundo/Decoracion.java` | `LARGO_PASO` (3, en el sentido de circulación), `FRANJAS_PASO` (6), `SEPARACION_FRANJAS` (1.65), `ANCHO_FRANJA` (0.9), `ALTURA_FRANJA` (0.03), `GROSOR_FRANJA` (0.02). `UBICACIONES_PASOS` se genera en `calcularUbicaciones()` desde `INTERSECCIONES_SEMAFORO` y `Mapa.parques()`. Mantener `(FRANJAS_PASO - 1) · SEPARACION_FRANJAS + ANCHO_FRANJA` ≤ 10, o `PasosPeatonalesTest` avisa que la pintura invade la vereda |
+| Colores de paredes y techos | `mundo/Edificio.java` | `PALETA_FACHADAS` (ladrillo, crema, blanco hueso, gris cemento, terracota, verde agua, amarillo pálido), `PALETA_TECHOS` (gris oscuro, gris claro, teja, verde), `TECHO_TEJA` (índice del techo de las casas), `COLOR_METAL`, `COLOR_TANQUE` |
+| Qué tipo sale en cada manzana | `mundo/Edificio.java` | `SEMILLA_TIPO` (167): cambiarla sortea otra ciudad (siempre la misma para cada semilla). `EdificioTest` avisa si quedan menos de 4 tipos |
+| Torre | `mundo/Edificio.java` | `ALTURA_TORRE_MIN` / `ALTURA_TORRE_MAX` (16 / 22), `ANCHO_TORRE` (4.4), `ALTURA_PODIO` (3.2), `PROBABILIDAD_ANTENA` (0.5), `ALTO_ANTENA` (3.5), `GROSOR_ANTENA` (0.12), `DIAMETRO_TANQUE` (1.6), `ALTO_TANQUE` (1.3), `ALTO_PATAS` (0.8) |
+| Bloque | `mundo/Edificio.java` | `ALTURA_BLOQUE_MIN` / `ALTURA_BLOQUE_MAX` (7 / 11), `ALTO_BARANDA` (0.5), `GROSOR_BARANDA` (0.1), `ANCHO_ASCENSOR` (2), `ALTO_ASCENSOR` (1.8), `CORRIMIENTO_ASCENSOR` (1.3) |
+| Escalonado | `mundo/Edificio.java` | `ANCHOS_NIVELES` (7, 5.2, 3.6), `NIVELES_MIN` / `NIVELES_MAX` (2 / 3), `ALTURA_NIVEL_MIN` / `ALTURA_NIVEL_MAX` (4 / 5) |
+| Casa baja | `mundo/Edificio.java` | `PISOS_CASA_MIN` / `PISOS_CASA_MAX` (1 / 2), `ALTO_PLANTA_CASA` (3.2), `ALTO_PISO_CASA` (2), `ALTO_TECHO_CASA` (2), `LADO_CHIMENEA` (0.5), `ALTO_CHIMENEA` (1.8) |
+| Doble | `mundo/Edificio.java` | `ANCHO_PARTE_ALTA` (4 de los 7), `ALTURA_DOBLE_ALTA_MIN` / `_MAX` (9 / 13), `ALTURA_DOBLE_BAJA_MIN` / `_MAX` (4 / 6) |
+| Huella y losas | `mundo/Edificio.java` | `VUELO_CORNISA` (0.15; `MEDIA_HUELLA` = 3.5 + vuelo debe quedar < 5 o `EdificioTest` avisa), `GROSOR_LOSA` (0.3), `ALTO_MINIMO_BASE` (3.2: la planta baja con su toldo) |
+| Ventanas según el tipo | `mundo/TipoEdificio.java` | Los cinco números de cada tipo: columnas por cara, separación, ancho, alto y altura de piso (por ejemplo `TORRE(4, 1.0f, 0.6f, 0.8f, 1.6f)`) |
+| Dónde van las ventanas | `mundo/Fachada.java` | `PRIMER_PISO_Y` (1.7), `MARGEN_VERTICAL` (0.35), `MARGEN_LATERAL` (0.3), `TOPE_PLANTA_BAJA` (2.8) |
 | Ventanas de noche | `mundo/Fachada.java` | `PORCENTAJE_VENTANAS_ENCENDIDAS` (0.65), `TONOS_VENTANA` (amarillo cálido, blanco cálido, anaranjado, blanco frío), `PESOS_TONOS` (0.4, 0.3, 0.2, 0.1), `COLOR_VENTANA_APAGADA` |
 | Ventanas de día | `mundo/Fachada.java` | `COLOR_VIDRIO_DIA` (blanco-celeste grisáceo, sin emisión) |
 | Toldos | `mundo/Fachada.java` | `COLORES_TOLDO` (rojo, verde, azul, naranja), `PROBABILIDAD_RAYAS` (0.35), `ANCHO_RAYA` (0.6), `EXCESO_TOLDO` (0.05 a cada lado de la vidriera), `VUELO_TOLDO` (0.7; mantener ≤ 0.8 para no tocar los postes de semáforo), `ALTURA_TOLDO` (2.45), `CAIDA_TOLDO` (0.3), `ESCALONES_TOLDO` (3) |
-| Puerta y vidrieras | `mundo/Fachada.java` | `ANCHO_PUERTA` (1, siempre centrada), `ALTO_PUERTA` (2), `SEPARACION_PUERTA` (0.2), `MARGEN_ESQUINA` (0.4); `ANCHO_VIDRIERA` se calcula como 3.5 − margen − media puerta − separación (2.4) y `CENTRO_VIDRIERA` (1.9); `ALTO_VIDRIERA` (1.4), `COLOR_VIDRIERA_DIA`, `COLOR_VIDRIERA_NOCHE` |
-| Resolución de las figuras | `motor/Figuras.java` | `SECTORES_ESFERA` (12), `ANILLOS_ESFERA` (8), `LADOS_CILINDRO` (10), `LADOS_CONO` (10): más lados = más redondo y más triángulos |
+| Puerta y vidrieras | `mundo/Fachada.java` | `ANCHO_PUERTA` (1, siempre centrada), `ALTO_PUERTA` (2), `SEPARACION_PUERTA` (0.2), `MARGEN_ESQUINA` (0.4); `ANCHO_VIDRIERA` se calcula como 3.5 − margen − media puerta − separación (2.4) y `CENTRO_VIDRIERA` (1.9); `ALTO_VIDRIERA` (1.4), `COLOR_VIDRIERA_DIA`, `COLOR_VIDRIERA_NOCHE_ABAJO` / `COLOR_VIDRIERA_NOCHE_ARRIBA` (degradado de noche), `FRANJAS_VIDRIERA` (6) |
+| Resolución de las figuras | `motor/Figuras.java` | `SECTORES_ESFERA` (12), `ANILLOS_ESFERA` (8), `LADOS_CILINDRO` (10), `LADOS_CONO` (10), `PERFIL_PRISMA` (triángulo del techo a dos aguas): más lados = más redondo y más triángulos |
 | Forma de la cabina | `vehiculo/Cabina.java` | `PERFIL_CABINA` (puntos {z, y} del contorno lateral; debe ser convexo), `ANCHO_CABINA` (1.40) |
 | Vidrios de la cabina | `vehiculo/Cabina.java` | `COLOR_VIDRIO` (azul-gris oscuro), `SEPARACION_VIDRIO` (0.012), `GROSOR_VIDRIO` (0.02), `MARGEN_VIDRIO` (0.07), `BASE_VENTANILLA` (0.98), `TECHO_VENTANILLA` (1.33), `CENTRO_PARANTE` (0.20), `ANCHO_PARANTE` (0.12) |
 | Color del auto del jugador | `vehiculo/Auto.java` | `COLOR_CARROCERIA` (rojo: carrocería y cabina) |
@@ -378,7 +438,7 @@ Todos los valores ajustables son constantes con nombre al inicio de su archivo. 
 | Alcance y fuerza de los faros | `iluminacion.frag` | `FAROS_ATENUACION_CUADRATICA` (0.04), `INTENSIDAD_FARO` (8.0), `COLOR_FARO` (1.0, 0.94, 0.72) |
 | Posición e inclinación de los faros | `iluminacion.frag` | `FAROS_SEPARACION` (0.55), `FAROS_AVANCE` (1.36), `FAROS_INCLINACION` (0.10) |
 | Campo visual de la cámara | `ciudad.vert` | `CAMPO_VISUAL` (55°) |
-| Distancia de dibujo | `ciudad.vert` | `PLANO_CERCANO` (0.1), `PLANO_LEJANO` (250); este último debe cubrir la ciudad desde la vista aérea |
+| Distancia de dibujo | `ciudad.vert` | `PLANO_CERCANO` (0.1), `PLANO_LEJANO` (320); este último debe cubrir la ciudad desde la vista aérea alejada al máximo con el centro en una esquina (143 + 156 de diagonal ≈ 299). `CamaraTest` lo verifica |
 | Orden de alturas en el minimapa | `ciudad.vert` | `ESCALA_ALTURA_MAPA` (100) |
 
 ## 9. Guion de demostración
@@ -390,7 +450,7 @@ Sigue el orden del enunciado. Antes de empezar, conviene tener la ventana en tam
 | 0 | `mvn compile exec:exec` y **ENTER** | Menú de inicio con el título; al presionar ENTER, la partida arranca de día, con la cámara de seguimiento, el minimapa arriba a la derecha y el HUD arriba a la izquierda |
 | 1 | **W** para acelerar, **A / D** para girar, **S** para frenar y retroceder, **Espacio** para el freno fuerte | El auto acelera y dobla. Velocidad en el título y en el HUD. El tráfico circula por su carril |
 | 2 | Chocar contra una vereda o manzana, y acercarse a un vehículo del tráfico | El auto se detiene sin atravesar la manzana ni al otro vehículo. El vehículo del tráfico frena si el auto está adelante |
-| 3 | **C** (tres veces) | Cámara orbital del auto (arrastrar con el mouse para girar y elevar, ruedita para acercar); después la vista aérea de toda la ciudad, con la flecha cian sobre el auto; al final vuelve la cámara de seguimiento |
+| 3 | **C** (tres veces) | Cámara orbital del auto (arrastrar con el mouse para girar y elevar, ruedita para acercar); después la vista aérea de toda la ciudad, con la flecha cian sobre el auto: arrastrar con el botón izquierdo para girar alrededor de la ciudad, ruedita para acercar y botón derecho para recorrerla; al final vuelve la cámara de seguimiento |
 | 3b | En la cámara orbital (**C** una vez), girar hasta ver el auto de costado y manejar: **W**, **A/D**, **S** y **Espacio** | Las ruedas giran (la marca roja da vueltas) y las delanteras doblan con A/D. Mirando la cola del auto: al frenar se encienden las luces de freno y al ir marcha atrás, la luz blanca de reversa. Funciona de día y de noche |
 | 4 | **N** | Noche: farolas, ventanas encendidas (≈65 %, tonos variados), vidrieras iluminadas, luces del tráfico con sus focos sobre la calle. El HUD y el título muestran "Noche" |
 | 5 | **F** (y otra vez **F**) | Se apagan y encienden los faros del jugador: los conos sobre la calle, las bombillas delanteras (blancas y emisivas) y las luces de posición traseras. Frenando con S o Espacio, las traseras pasan a rojo intenso aunque F esté apagado. Las luces del tráfico no cambian |
@@ -406,7 +466,7 @@ Las capturas van en `docs/capturas/`. Si todavía no se tomaron, las imágenes d
 
 | Captura | Qué mostrar |
 |---|---|
-| ![De día](docs/capturas/dia.png) | `dia.png`: cámara de seguimiento de día, con edificios, toldos, tráfico y HUD |
+| ![De día](docs/capturas/dia.png) | `dia.png`: cámara de seguimiento de día, con edificios de distintos tipos (una torre, una casa baja), toldos, tráfico y HUD |
 | ![De noche](docs/capturas/noche.png) | `noche.png`: la misma zona de noche, con farolas, ventanas encendidas y luces del tráfico |
 | ![Minimapa](docs/capturas/minimapa.png) | `minimapa.png`: minimapa con sectores, auto y destino (puede ser un recorte de la esquina superior derecha) |
 | ![Parque](docs/capturas/parque.png) | `parque.png`: un parque con fuente, senderos, árboles y bancos |

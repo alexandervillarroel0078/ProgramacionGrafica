@@ -3,6 +3,7 @@ package com.graphics.ciudad.vehiculo; // Agrupa el vehículo del jugador y sus c
 import com.graphics.ciudad.motor.Cubo; // Dibuja cada pieza del vehículo.
 import com.graphics.ciudad.motor.Figuras; // Cilindros para las ruedas.
 import com.graphics.ciudad.motor.Shader; // Emisión de las luces de freno y reversa, y rotación de las ruedas (uRotacion).
+import com.graphics.ciudad.mundo.Mapa; // Centro de la calle de salida y ancho de celda.
 import java.util.function.IntPredicate; // Pregunta si una tecla está presionada sin depender de GLFW.
 import static org.lwjgl.glfw.GLFW.*; // Incluye las constantes de las teclas de conducción.
 
@@ -46,9 +47,13 @@ public class Auto {
 
     // ==================== 1. VARIABLES DEL AUTO ====================
     public static final float RADIO_AUTO = 1.65f; // Radio que contiene al vehículo para las colisiones.
-    public static final float X_INICIAL = -50; // Columna 0: calle del borde oeste.
+    // Salida: esquina suroeste, mirando al norte. Se circula por la derecha, así que el auto no parte sobre la línea
+    // amarilla (el centro de la calle del borde oeste, X = -50) sino en el centro del carril derecho: mirando al norte,
+    // la derecha es +X. Es el mismo desplazamiento que usa el tráfico (Vehiculo.DESPLAZAMIENTO_CARRIL).
+    public static final float CARRIL_SALIDA = Mapa.TAM_CELDA / 4; // 2.5: del centro de la calle al centro del carril derecho.
+    public static final float X_INICIAL = Mapa.centro(0) + CARRIL_SALIDA; // -47.5: carril derecho de la calle de la columna 0.
     public static final float Z_INICIAL = 50; // Fila 10: calle del borde sur; el auto parte de la esquina suroeste.
-    float x = X_INICIAL; // Posición horizontal inicial: centro de una calle.
+    float x = X_INICIAL; // Posición horizontal inicial: carril derecho de la calle.
     float z = Z_INICIAL; // Posición inicial sobre el eje que recorre el fondo de la ciudad.
     float angulo = 0; // Orientación en radianes; cero apunta hacia -Z.
     float velocidad = 0; // Unidades por segundo; un valor negativo significa reversa.

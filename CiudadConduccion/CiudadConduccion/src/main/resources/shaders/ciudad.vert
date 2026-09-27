@@ -20,7 +20,7 @@ out vec3 vNormal; // Envía la normal transformada para la iluminación de ilumi
 // ==================== CONSTANTES DE PROYECCIÓN (valores ajustables) ====================
 const float CAMPO_VISUAL = 55.0; // Campo visual vertical de la cámara, en grados: más grande = más gran angular.
 const float PLANO_CERCANO = 0.1; // Distancia mínima visible; lo que esté más cerca de la cámara se recorta.
-const float PLANO_LEJANO = 250.0; // Distancia máxima visible; debe cubrir la ciudad entera desde la vista aérea.
+const float PLANO_LEJANO = 320.0; // Distancia máxima visible; debe cubrir la ciudad entera desde la vista aérea, aun alejada al máximo (143) con el centro en una esquina: 143 + diagonal de la ciudad (156) ≈ 299.
 const float ESCALA_ALTURA_MAPA = 100.0; // En el minimapa, divide la altura para ordenar la profundidad (lo alto tapa lo bajo).
 
 void main() { // OpenGL ejecuta este bloque una vez por vértice.

@@ -130,8 +130,7 @@ public class Decoracion {
                     parque.dibujar(fila, columna, noche); // Añade senderos, fuente, árboles y bancos propios de este parque.
                 }
                 if (tipo == Mapa.EDIFICIO) { // Detecta una parcela con edificio.
-                    float altura = Mapa.alturaEdificio(fila, columna); // Recupera la misma altura calculada en Ciudad.
-                    fachada.dibujar(fila, columna, x, z, altura, noche); // Planta baja comercial y ventanas (vidrio de día, variadas de noche).
+                    fachada.dibujar(fila, columna, x, z, noche); // Planta baja comercial y ventanas según el tipo (vidrio de día, variadas de noche).
                 }
             }
         }

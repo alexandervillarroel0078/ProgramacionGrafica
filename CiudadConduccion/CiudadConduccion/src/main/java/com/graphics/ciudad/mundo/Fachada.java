@@ -2,6 +2,9 @@ package com.graphics.ciudad.mundo; // Agrupa lo que forma la ciudad: mapa, edifi
 
 import com.graphics.ciudad.motor.Cubo; // Ventanas, puertas, vidrieras y toldos son cajas finas.
 import com.graphics.ciudad.motor.Shader; // Emisión de las ventanas encendidas y las vidrieras de noche.
+import java.util.ArrayList; // Lista de ventanas de cada edificio.
+import java.util.Collections; // Publica las listas sin permitir modificarlas.
+import java.util.List; // Tipo de esas listas.
 
 /**
  * FACHADA: todo lo que se ve pegado a las paredes de un edificio.
@@ -11,14 +14,17 @@ import com.graphics.ciudad.motor.Shader; // Emisión de las ventanas encendidas 
  *    sobresale un poco hacia la vereda. Con la puerta en el centro, ninguna queda junto a una esquina: dos caras vecinas
  *    nunca tienen puertas pegadas. Entre la última vidriera y la esquina queda MARGEN_ESQUINA. El color del toldo
  *    (rojo, verde, azul o naranja, a veces a rayas) se elige por celda con Variacion.
- *  - VENTANAS de los pisos superiores: de DÍA son vidrio claro (blanco-celeste grisáceo) y reciben la luz del sol como
- *    cualquier superficie; de NOCHE cerca de PORCENTAJE_VENTANAS_ENCENDIDAS están encendidas (emisivas, con tonos de
- *    TONOS_VENTANA) y el resto apagadas (azul-gris muy oscuro). Cada ventana decide con un hash de edificio, cara, piso y
- *    columna: la misma ventana siempre está igual, sin parpadeos.
+ *  - VENTANAS en cada cara de cada volumen del edificio (Edificio.volumenes), con el patrón de su TipoEdificio: muchas
+ *    y chicas en la torre, anchas en el bloque, pocas en la casa baja. Una ventana no se pone si la tapa otro volumen
+ *    (la parte baja de un edificio doble, el nivel de abajo de un escalonado) ni sobre el negocio de la planta baja.
+ *    De DÍA son vidrio claro (blanco-celeste grisáceo) y reciben la luz del sol como cualquier superficie; de NOCHE
+ *    cerca de PORCENTAJE_VENTANAS_ENCENDIDAS están encendidas (emisivas, con tonos de TONOS_VENTANA) y el resto apagadas
+ *    (azul-gris muy oscuro). Cada ventana decide con un hash de edificio, volumen, cara, piso y columna: la misma
+ *    ventana siempre está igual, sin parpadeos.
  * El estado día/noche no se guarda aquí: Decoracion lo recibe de Juego, que lo lee de Iluminacion.esNoche().
  * Todo va sobre la pared o, como el toldo, sobre la vereda (VUELO_TOLDO): nada llega a la calzada ni cambia colisiones.
- * Se comunica con: Decoracion (la llama para cada edificio), Mapa (celdas, vecinos, ancho del edificio), Variacion,
- * Cubo y Shader.
+ * Se comunica con: Decoracion (la llama para cada edificio), Mapa (celdas, vecinos, ancho del edificio), Edificio y
+ * TipoEdificio (volúmenes y patrón de ventanas), Variacion, Cubo y Shader.
  * Coordenadas de una cara: "u" recorre la pared de izquierda a derecha y "afuera" es la distancia desde el centro del
  * edificio en la dirección de la calle; ANCHO_EDIFICIO / 2 = 3.5 es el plano de la pared.
  */
@@ -36,11 +42,12 @@ public class Fachada {
     public static final float[] COLOR_VIDRIO_DIA = {0.72f, 0.80f, 0.86f}; // Vidrio de día: blanco-celeste grisáceo, sin emisión.
     public static final float[] COLOR_VENTANA_APAGADA = {0.06f, 0.08f, 0.13f}; // Ventana apagada de noche: azul-gris muy oscuro.
     public static final float PRIMER_PISO_Y = 1.7f; // Altura del centro de las ventanas del primer nivel (planta baja).
-    public static final float ALTURA_PISO = 2; // Separación vertical entre pisos.
-    public static final int VENTANAS_POR_FACHADA = 3; // Ventanas por piso en cada cara.
-    public static final float SEPARACION_VENTANAS = 2; // Distancia entre centros de ventanas vecinas.
-    public static final float ANCHO_VENTANA = 0.8f; // Ancho de cada ventana.
-    public static final float ALTO_VENTANA = 0.9f; // Alto de cada ventana.
+    // Cuántas ventanas, de qué tamaño y cada cuánto: TipoEdificio (columnasVentanas, separacionVentanas, anchoVentana,
+    // altoVentana, alturaPiso). Los pisos se cuentan desde la acera para todo el edificio, así las filas de ventanas
+    // de volúmenes vecinos quedan alineadas.
+    public static final float MARGEN_VERTICAL = 0.35f; // Pared libre entre una ventana y la base o el tope de su volumen (y su losa).
+    public static final float MARGEN_LATERAL = 0.3f; // Pared libre entre la última ventana y la esquina de su cara.
+    public static final float TOPE_PLANTA_BAJA = 2.8f; // En una cara con negocio, ninguna ventana baja de acá (el toldo está en 2.45).
 
     // ==================== 2. PLANTA BAJA (valores ajustables) ====================
     public static final float[] COLOR_PUERTA = {0.14f, 0.11f, 0.09f}; // Madera muy oscura.
@@ -56,7 +63,12 @@ public class Fachada {
     public static final float ALTO_VIDRIERA = 1.4f; // Alto del vidrio.
     public static final float BASE_VIDRIERA = 0.6f; // Altura del borde inferior del vidrio (zócalo).
     public static final float[] COLOR_VIDRIERA_DIA = {0.55f, 0.70f, 0.80f}; // Vidrio de día, sin emisión.
-    public static final float[] COLOR_VIDRIERA_NOCHE = {1.00f, 0.84f, 0.58f}; // Local iluminado de noche: cálido y emisivo.
+    // De noche la vidriera es vidrio iluminado desde adentro: más clara abajo (donde está la mercadería bajo las
+    // lámparas) y más apagada arriba. Como Cubo pinta cada caja de un solo color, el degradado se arma con
+    // FRANJAS_VIDRIERA franjas horizontales cuyo color va de COLOR_VIDRIERA_NOCHE_ABAJO a COLOR_VIDRIERA_NOCHE_ARRIBA.
+    public static final float[] COLOR_VIDRIERA_NOCHE_ABAJO = {0.86f, 0.70f, 0.46f}; // Franja inferior: cálida, emisiva y menos intensa que antes (1, 0.84, 0.58).
+    public static final float[] COLOR_VIDRIERA_NOCHE_ARRIBA = {0.58f, 0.46f, 0.32f}; // Franja superior: la más tenue.
+    public static final int FRANJAS_VIDRIERA = 6; // Más franjas = degradado más suave (y más cajas por vidriera).
     public static final float[][] COLORES_TOLDO = { // Colores posibles del toldo.
         {0.78f, 0.12f, 0.10f}, // Rojo.
         {0.10f, 0.50f, 0.22f}, // Verde.
@@ -75,17 +87,100 @@ public class Fachada {
 
     // ==================== 3. DECISIONES DETERMINÍSTICAS (sin azar por cuadro) ====================
 
-    /** Índice único de una ventana dentro de su edificio: combina cara, piso y columna. */
-    private static int indiceVentana(int cara, int piso, int columnaVentana) {
-        return cara * 1000 + piso * 10 + columnaVentana; // Cada combinación da un número distinto.
+    /** Una ventana ya ubicada: a qué volumen, cara, piso y columna pertenece, su centro en el mundo y su tamaño. */
+    public static final class Ventana {
+        public final int volumen, cara, piso, columna; // Identidad dentro del edificio.
+        public final float x, z, y, ancho, alto; // Centro sobre la pared y medidas.
+
+        Ventana(int volumen, int cara, int piso, int columna, float x, float z, float y, float ancho, float alto) {
+            this.volumen = volumen;
+            this.cara = cara;
+            this.piso = piso;
+            this.columna = columna;
+            this.x = x;
+            this.z = z;
+            this.y = y;
+            this.ancho = ancho;
+            this.alto = alto;
+        }
+
+        /** Índice único dentro del edificio: combina volumen, cara, piso y columna (cada combinación da otro número). */
+        public int indice() {
+            return volumen * 10000 + cara * 1000 + piso * 10 + columna; // Menos de 10 columnas y de 100 pisos.
+        }
+    }
+
+    /** Cuántas columnas del patrón entran en una cara de ese ancho, dejando MARGEN_LATERAL a cada lado (al menos una). */
+    public static int columnasQueEntran(TipoEdificio tipo, float anchoCara) {
+        int n = tipo.columnasVentanas; // Lo que pide el patrón.
+        while (n > 1 && (n - 1) * tipo.separacionVentanas + tipo.anchoVentana > anchoCara - 2 * MARGEN_LATERAL) { // No entran.
+            n--; // Una columna menos.
+        }
+        return n; // Columnas que se dibujan.
+    }
+
+    /**
+     * Todas las ventanas del edificio de la celda: recorre cada volumen, cada cara y cada piso, y descarta las que
+     * no entran en el volumen, las que quedan sobre el negocio de la planta baja y las que tapa otro volumen.
+     */
+    public static List<Ventana> ventanas(int fila, int columna) {
+        TipoEdificio tipo = Edificio.tipo(fila, columna); // Patrón de ventanas.
+        List<Edificio.Volumen> volumenes = Edificio.volumenes(fila, columna); // Cajas con paredes.
+        float centroX = Mapa.centro(columna); // Centro de la manzana.
+        float centroZ = Mapa.centro(fila);
+        List<Ventana> lista = new ArrayList<>(); // Resultado.
+        for (int iv = 0; iv < volumenes.size(); iv++) { // Cada volumen.
+            Edificio.Volumen vol = volumenes.get(iv);
+            for (int cara = 0; cara < Mapa.VECINOS.length; cara++) { // Norte, sur, oeste y este.
+                int[] dir = Mapa.VECINOS[cara]; // {dFila, dColumna}: la columna es X y la fila es Z.
+                boolean normalEnX = dir[1] != 0; // La cara mira al oeste o al este.
+                float mitad = normalEnX ? vol.anchoX / 2 : vol.anchoZ / 2; // Del centro del volumen a esta pared.
+                float anchoCara = normalEnX ? vol.anchoZ : vol.anchoX; // Largo de la pared.
+                float hastaCentro = normalEnX ? (vol.x - centroX) * dir[1] : (vol.z - centroZ) * dir[0]; // Corrimiento del volumen hacia afuera.
+                boolean enBorde = Math.abs(hastaCentro + mitad - Mapa.ANCHO_EDIFICIO / 2) < 1e-3f; // La pared está en el borde de la huella.
+                boolean conNegocio = enBorde && Mapa.esCalleSegura(fila + dir[0], columna + dir[1]); // Planta baja comercial.
+                int n = columnasQueEntran(tipo, anchoCara); // Columnas de esta cara.
+                for (int piso = 0; ; piso++) { // Pisos desde la acera.
+                    float y = PRIMER_PISO_Y + piso * tipo.alturaPiso; // Centro de las ventanas de este piso.
+                    float abajo = y - tipo.altoVentana / 2; // Borde inferior.
+                    float arriba = y + tipo.altoVentana / 2; // Borde superior.
+                    if (arriba > vol.yTope - MARGEN_VERTICAL) { // Ya no entra: los pisos siguientes tampoco.
+                        break;
+                    }
+                    if (abajo < vol.yBase + MARGEN_VERTICAL || (conNegocio && abajo < TOPE_PLANTA_BAJA)) { // Debajo del volumen o sobre el negocio.
+                        continue;
+                    }
+                    for (int col = 0; col < n; col++) { // Columnas centradas en la cara.
+                        float u = (col - (n - 1) / 2f) * tipo.separacionVentanas; // Posición a lo largo de la pared.
+                        float[] p = puntoEnCara(vol.x, vol.z, cara, u, mitad + SEPARACION_PARED); // Apenas delante de la pared.
+                        if (!tapada(volumenes, iv, p, abajo, arriba)) { // Solo las que se ven.
+                            lista.add(new Ventana(iv, cara, piso, col, p[0], p[1], y, tipo.anchoVentana, tipo.altoVentana));
+                        }
+                    }
+                }
+            }
+        }
+        return lista; // Ventanas del edificio.
+    }
+
+    /** Indica si otro volumen (con su losa) tapa la ventana en el punto p, entre las alturas abajo y arriba. */
+    private static boolean tapada(List<Edificio.Volumen> volumenes, int propio, float[] p, float abajo, float arriba) {
+        for (int i = 0; i < volumenes.size(); i++) { // Los demás volúmenes.
+            Edificio.Volumen otro = volumenes.get(i);
+            boolean cruzaEnAltura = abajo < otro.yTope + Edificio.GROSOR_LOSA && arriba > otro.yBase; // Comparten alturas.
+            if (i != propio && otro.cubre(p[0], p[1]) && cruzaEnAltura) { // La ventana quedaría adentro del otro.
+                return true;
+            }
+        }
+        return false; // Se ve desde afuera.
     }
 
     /**
      * Tono de una ventana de noche: -1 si está apagada, o el índice en TONOS_VENTANA si está encendida.
      * Usa dos valores de Variacion: uno decide encendida/apagada y el otro el tono, repartido según PESOS_TONOS.
      */
-    public static int tonoVentana(int fila, int columna, int cara, int piso, int columnaVentana) {
-        int indice = indiceVentana(cara, piso, columnaVentana); // Identidad de la ventana en su edificio.
+    public static int tonoVentana(int fila, int columna, Ventana ventana) {
+        int indice = ventana.indice(); // Identidad de la ventana en su edificio.
         if (Variacion.valor(fila, columna, indice, 21) >= PORCENTAJE_VENTANAS_ENCENDIDAS) { // Por encima del umbral...
             return -1; // ...la ventana está apagada.
         }
@@ -101,11 +196,11 @@ public class Fachada {
     }
 
     /** Color {r, g, b, emisiva} de una ventana: vidrio de día; encendida (emisiva) o apagada de noche. */
-    public static float[] colorVentana(int fila, int columna, int cara, int piso, int columnaVentana, boolean noche) {
+    public static float[] colorVentana(int fila, int columna, Ventana ventana, boolean noche) {
         if (!noche) { // De día todas las ventanas son vidrio.
             return new float[] {COLOR_VIDRIO_DIA[0], COLOR_VIDRIO_DIA[1], COLOR_VIDRIO_DIA[2], 0}; // Sin emisión: las ilumina el sol.
         }
-        int tono = tonoVentana(fila, columna, cara, piso, columnaVentana); // Estado de esta ventana.
+        int tono = tonoVentana(fila, columna, ventana); // Estado de esta ventana.
         if (tono < 0) { // Apagada.
             return new float[] {COLOR_VENTANA_APAGADA[0], COLOR_VENTANA_APAGADA[1], COLOR_VENTANA_APAGADA[2], 0}; // Oscura, sin emisión.
         }
@@ -121,6 +216,19 @@ public class Fachada {
     /** Indica si el toldo del edificio es a rayas. */
     public static boolean toldoARayas(int fila, int columna) {
         return Variacion.valor(fila, columna, 0, 24) < PROBABILIDAD_RAYAS; // Algunos edificios, siempre los mismos.
+    }
+
+    /**
+     * Color de la franja "franja" (0 = la de abajo) de una vidriera de noche: interpolación lineal entre
+     * COLOR_VIDRIERA_NOCHE_ABAJO y COLOR_VIDRIERA_NOCHE_ARRIBA, t = franja / (FRANJAS_VIDRIERA - 1).
+     */
+    public static float[] colorVidrieraNoche(int franja) {
+        float t = FRANJAS_VIDRIERA > 1 ? (float) franja / (FRANJAS_VIDRIERA - 1) : 0; // 0 abajo, 1 arriba.
+        float[] c = new float[3]; // Resultado.
+        for (int i = 0; i < 3; i++) { // Rojo, verde y azul.
+            c[i] = COLOR_VIDRIERA_NOCHE_ABAJO[i] + (COLOR_VIDRIERA_NOCHE_ARRIBA[i] - COLOR_VIDRIERA_NOCHE_ABAJO[i]) * t; // Mezcla.
+        }
+        return c; // Color de la franja.
     }
 
     /** Tramo {uMin, uMax} que ocupa la puerta sobre la cara: siempre centrada. */
@@ -159,22 +267,32 @@ public class Fachada {
 
     private final Shader shader; // Programa que recibe el interruptor de emisión.
     private final Cubo cubo; // Geometría compartida.
+    private final List<List<Ventana>> ventanasPorCelda = new ArrayList<>(); // Ventanas calculadas una sola vez (fila · ancho + columna).
 
-    /** Recibe el shader y el cubo compartidos. */
+    /** Recibe el shader y el cubo compartidos y ubica de una vez las ventanas de todos los edificios. */
     public Fachada(Shader shader, Cubo cubo) {
         this.shader = shader; // Guarda el programa para cambiar uEmision.
         this.cubo = cubo; // Guarda la geometría compartida.
+        for (int fila = 0; fila < Mapa.MAPA.length; fila++) { // Recorre el mapa.
+            for (int columna = 0; columna < Mapa.MAPA[fila].length; columna++) {
+                boolean hayEdificio = Mapa.tipo(fila, columna) == Mapa.EDIFICIO; // Solo las manzanas con edificio.
+                ventanasPorCelda.add(hayEdificio ? Collections.unmodifiableList(ventanas(fila, columna)) : Collections.emptyList());
+            }
+        }
     }
 
-    /** Dibuja las cuatro caras del edificio de la celda (fila, columna), con centro (x, z) y la altura indicada. */
-    public void dibujar(int fila, int columna, float x, float z, float altura, boolean noche) {
+    /** Dibuja la planta baja de las caras a la calle y las ventanas del edificio de la celda (fila, columna), con centro (x, z). */
+    public void dibujar(int fila, int columna, float x, float z, boolean noche) {
         for (int cara = 0; cara < Mapa.VECINOS.length; cara++) { // Norte, sur, oeste y este (mismo orden que Mapa.VECINOS).
             int[] vecino = Mapa.VECINOS[cara]; // {dFila, dColumna} hacia afuera de esta cara.
-            boolean daAUnaCalle = Mapa.esCalleSegura(fila + vecino[0], columna + vecino[1]); // ¿Hay calle frente a la cara?
-            if (daAUnaCalle) { // Las caras a la calle tienen negocio en planta baja.
+            if (Mapa.esCalleSegura(fila + vecino[0], columna + vecino[1])) { // Las caras a la calle tienen negocio en planta baja.
                 dibujarPlantaBaja(fila, columna, x, z, cara, noche); // Puerta, vidriera (iluminada de noche) y toldo.
             }
-            dibujarVentanas(fila, columna, x, z, altura, cara, daAUnaCalle ? 1 : 0, noche); // Ventanas desde el piso que corresponda.
+        }
+        for (Ventana v : ventanasPorCelda.get(fila * Mapa.MAPA[0].length + columna)) { // Ventanas ya ubicadas.
+            float[] c = colorVentana(fila, columna, v, noche); // Vidrio, encendida o apagada.
+            shader.entero("uEmision", (int) c[3]); // Las ventanas encendidas simulan habitaciones con luz en el ambiente nocturno.
+            cajaEnPunto(v.x, v.z, v.cara, v.y, v.ancho, v.alto, GROSOR_PEGADO, c[0], c[1], c[2]); // Ventana sobre su pared.
         }
         shader.entero("uEmision", 0); // Restablece la iluminación normal de los demás elementos.
     }
@@ -184,28 +302,16 @@ public class Fachada {
      * edificio hacia la calle, y = altura del centro; anchoU, alto y grosor son sus medidas.
      */
     private void cajaEnCara(float x, float z, int cara, float u, float afuera, float y, float anchoU, float alto, float grosor, float r, float g, float b) {
-        float nx = Mapa.VECINOS[cara][1]; // Normal de la cara en X (la columna es X).
         float[] centro = puntoEnCara(x, z, cara, u, afuera); // Centro de la caja sobre la cara.
-        float cx = centro[0]; // Centro de la caja en X.
-        float cz = centro[1]; // Centro de la caja en Z.
+        cajaEnPunto(centro[0], centro[1], cara, y, anchoU, alto, grosor, r, g, b); // Caja alineada a esa cara.
+    }
+
+    /** Dibuja una caja centrada en (cx, y, cz), con anchoU a lo largo de la cara y grosor en la dirección de su normal. */
+    private void cajaEnPunto(float cx, float cz, int cara, float y, float anchoU, float alto, float grosor, float r, float g, float b) {
+        float nx = Mapa.VECINOS[cara][1]; // Normal de la cara en X (la columna es X).
         float sx = nx != 0 ? grosor : anchoU; // Si la cara mira al este u oeste, el grosor va en X y el ancho en Z.
         float sz = nx != 0 ? anchoU : grosor; // Y al revés si mira al norte o al sur.
         cubo.caja(cx, y, cz, sx, alto, sz, r, g, b); // Caja alineada a los ejes, pegada a la cara.
-    }
-
-    /** Distribuye ventanas por pisos en una cara del edificio, empezando en el piso "desdePiso". */
-    private void dibujarVentanas(int fila, int columna, float x, float z, float altura, int cara, int desdePiso, boolean noche) {
-        float pared = Mapa.ANCHO_EDIFICIO / 2 + SEPARACION_PARED; // Separa la ventana 0.01 de la pared (3.51) para que no parpadee.
-        for (int piso = desdePiso; PRIMER_PISO_Y + piso * ALTURA_PISO < altura; piso++) { // Recorre los pisos separados por dos unidades de altura.
-            float y = PRIMER_PISO_Y + piso * ALTURA_PISO; // Altura del centro de las ventanas de este piso.
-            for (int col = 0; col < VENTANAS_POR_FACHADA; col++) { // Coloca tres ventanas por fachada.
-                float u = (col - (VENTANAS_POR_FACHADA - 1) / 2f) * SEPARACION_VENTANAS; // -2, 0 y 2: centradas en la cara.
-                float[] c = colorVentana(fila, columna, cara, piso, col, noche); // Vidrio, encendida o apagada.
-                shader.entero("uEmision", (int) c[3]); // Las ventanas encendidas simulan habitaciones con luz en el ambiente nocturno.
-                cajaEnCara(x, z, cara, u, pared, y, ANCHO_VENTANA, ALTO_VENTANA, GROSOR_PEGADO, c[0], c[1], c[2]); // Ventana de esta fachada.
-            }
-        }
-        shader.entero("uEmision", 0); // Restablece la iluminación normal de los demás elementos.
     }
 
     /** Planta baja comercial "vidriera | puerta | vidriera": puerta centrada y un toldo inclinado sobre cada vidriera. */
@@ -213,12 +319,20 @@ public class Fachada {
         float pared = Mapa.ANCHO_EDIFICIO / 2 + SEPARACION_PARED + GROSOR_PEGADO / 2; // Plano apenas delante de la pared.
         cajaEnCara(x, z, cara, 0, pared, ALTURA_ACERA + ALTO_PUERTA / 2, ANCHO_PUERTA, ALTO_PUERTA, GROSOR_PEGADO,
             COLOR_PUERTA[0], COLOR_PUERTA[1], COLOR_PUERTA[2]); // Puerta oscura CENTRADA, apoyada en la acera: lejos de las esquinas.
-        float[] vidrio = noche ? COLOR_VIDRIERA_NOCHE : COLOR_VIDRIERA_DIA; // Local iluminado de noche o vidrio de día.
         shader.entero("uEmision", noche ? 1 : 0); // De noche las vidrieras brillan con luz cálida propia.
         for (float[] tramo : tramosVidrieras()) { // Vidriera izquierda y derecha.
             float uVidriera = (tramo[0] + tramo[1]) / 2; // Centro de la vidriera sobre la cara.
-            cajaEnCara(x, z, cara, uVidriera, pared, BASE_VIDRIERA + ALTO_VIDRIERA / 2, ANCHO_VIDRIERA, ALTO_VIDRIERA, GROSOR_PEGADO,
-                vidrio[0], vidrio[1], vidrio[2]); // Vidriera del negocio.
+            if (!noche) { // De día: un solo vidrio, iluminado por el sol.
+                cajaEnCara(x, z, cara, uVidriera, pared, BASE_VIDRIERA + ALTO_VIDRIERA / 2, ANCHO_VIDRIERA, ALTO_VIDRIERA, GROSOR_PEGADO,
+                    COLOR_VIDRIERA_DIA[0], COLOR_VIDRIERA_DIA[1], COLOR_VIDRIERA_DIA[2]); // Vidriera del negocio.
+                continue;
+            }
+            float altoFranja = ALTO_VIDRIERA / FRANJAS_VIDRIERA; // Las franjas cubren justo el alto del vidrio.
+            for (int franja = 0; franja < FRANJAS_VIDRIERA; franja++) { // De abajo hacia arriba.
+                float[] c = colorVidrieraNoche(franja); // Más clara abajo, más tenue arriba.
+                float y = BASE_VIDRIERA + (franja + 0.5f) * altoFranja; // Centro de la franja.
+                cajaEnCara(x, z, cara, uVidriera, pared, y, ANCHO_VIDRIERA, altoFranja, GROSOR_PEGADO, c[0], c[1], c[2]); // Franja del vidrio.
+            }
         }
         shader.entero("uEmision", 0); // Los toldos son tela: reciben luz normal.
         for (float[] tramo : tramosToldos()) { // Un toldo sobre cada vidriera; la puerta queda descubierta en el medio.

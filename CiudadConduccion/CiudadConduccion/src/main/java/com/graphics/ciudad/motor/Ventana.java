@@ -23,6 +23,7 @@ public class Ventana {
     private final int[] anchoReal = new int[1]; // Reserva espacio para que GLFW escriba el ancho en píxeles.
     private final int[] altoReal = new int[1]; // Reserva espacio para que GLFW escriba el alto en píxeles.
     private boolean arrastrando = false; // true mientras el botón izquierdo del mouse está presionado.
+    private boolean desplazando = false; // true mientras el botón derecho del mouse está presionado.
     private double ultimoX; // Última posición X conocida del cursor, en píxeles de la ventana.
     private double ultimoY; // Última posición Y conocida del cursor (crece hacia abajo).
 
@@ -53,15 +54,22 @@ public class Ventana {
 
     /**
      * Registra los callbacks del mouse, igual que el de teclado: GLFW los llama durante procesarEventos().
-     * - Botón: al presionar el izquierdo empieza un arrastre y se guarda la posición del cursor; al soltarlo termina.
-     * - Cursor: mientras dura el arrastre, entrega a alArrastrar el movimiento (dx, dy) desde la última posición.
+     * - Botón: al presionar el izquierdo (o el derecho) empieza un arrastre y se guarda la posición del cursor; al
+     *   soltarlo termina.
+     * - Cursor: mientras dura el arrastre, entrega el movimiento (dx, dy) desde la última posición: a alArrastrar si es
+     *   con el botón izquierdo (girar la cámara) y a alDesplazar si es con el derecho (mover el centro de la aérea).
      * - Ruedita: entrega a alRodar los pasos verticales (positivo = hacia adelante).
+     * Ventana no decide qué hace cada gesto: se lo pasa a Camara, que lo ignora si el modo actual no lo usa.
      * Callbacks.glfwFreeCallbacks() los libera al destruir la ventana, junto con el de teclado.
      */
-    public void configurarMouse(BiConsumer<Double, Double> alArrastrar, DoubleConsumer alRodar) {
+    public void configurarMouse(BiConsumer<Double, Double> alArrastrar, BiConsumer<Double, Double> alDesplazar, DoubleConsumer alRodar) {
         glfwSetMouseButtonCallback(ventana, (ventanaEvento, boton, accion, mods) -> { // Botones del mouse.
-            if (boton == GLFW_MOUSE_BUTTON_LEFT) { // Solo el botón izquierdo arrastra.
-                arrastrando = accion == GLFW_PRESS; // Empieza al presionar y termina al soltar.
+            if (boton == GLFW_MOUSE_BUTTON_LEFT || boton == GLFW_MOUSE_BUTTON_RIGHT) { // Los dos botones arrastran.
+                if (boton == GLFW_MOUSE_BUTTON_LEFT) { // Izquierdo: girar.
+                    arrastrando = accion == GLFW_PRESS; // Empieza al presionar y termina al soltar.
+                } else { // Derecho: desplazar.
+                    desplazando = accion == GLFW_PRESS; // Igual que el izquierdo.
+                }
                 double[] cx = new double[1]; // Espacio para la posición X del cursor.
                 double[] cy = new double[1]; // Espacio para la posición Y.
                 glfwGetCursorPos(ventanaEvento, cx, cy); // Posición actual: punto de partida del arrastre.
@@ -70,8 +78,10 @@ public class Ventana {
             }
         }); // Termina el registro del callback de botones.
         glfwSetCursorPosCallback(ventana, (ventanaEvento, px, py) -> { // Movimiento del cursor.
-            if (arrastrando) { // Solo interesa mientras se arrastra.
+            if (arrastrando) { // Arrastre con el botón izquierdo.
                 alArrastrar.accept(px - ultimoX, py - ultimoY); // Entrega cuánto se movió desde el último evento.
+            } else if (desplazando) { // Arrastre con el botón derecho.
+                alDesplazar.accept(px - ultimoX, py - ultimoY); // Mismo movimiento, otro gesto.
             }
             ultimoX = px; // Actualiza la última posición X.
             ultimoY = py; // Actualiza la última posición Y.

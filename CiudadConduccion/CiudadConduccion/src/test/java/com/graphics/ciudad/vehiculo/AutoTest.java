@@ -10,6 +10,26 @@ import static org.lwjgl.glfw.GLFW.GLFW_KEY_W; // Acelerar.
 /** Comprueba reinicio, ruedas, dirección y luces del auto sin abrir una ventana OpenGL. */
 public class AutoTest extends TestCase {
 
+    /**
+     * Tras R el auto queda en el carril derecho: a la derecha del centro de su calle, sin pisar la línea amarilla y
+     * sin salirse de la calzada. La derecha del auto es (cos a, -sen a), porque el frente es (-sen a, -cos a).
+     */
+    public void testSalidaEnElCarrilDerecho() {
+        Auto auto = new Auto(); // Auto nuevo, en la salida.
+        auto.x = 10; // Lo mueve a otro lugar...
+        auto.z = -30;
+        auto.angulo = 2; // ...y lo gira.
+        auto.reset(); // R.
+        float centroX = com.graphics.ciudad.mundo.Mapa.centro(com.graphics.ciudad.mundo.Mapa.indiceCelda(auto.getX())); // Centro de la calle en X.
+        float centroZ = com.graphics.ciudad.mundo.Mapa.centro(com.graphics.ciudad.mundo.Mapa.indiceCelda(auto.getZ())); // Y en Z.
+        float a = auto.getAngulo(); // Orientación tras el reinicio.
+        float lateral = (auto.getX() - centroX) * (float) Math.cos(a) - (auto.getZ() - centroZ) * (float) Math.sin(a); // Distancia hacia la derecha.
+        assertTrue("lateral=" + lateral, lateral > 0); // A la derecha del centro.
+        assertEquals(Auto.CARRIL_SALIDA, lateral, 1e-4f); // En el centro del carril derecho.
+        assertTrue(lateral - Auto.RADIO_AUTO > 0); // No toca la línea amarilla.
+        assertTrue(lateral + Auto.RADIO_AUTO < com.graphics.ciudad.mundo.Mapa.TAM_CELDA / 2); // Ni la vereda.
+    }
+
     private static final float DT = 1f / 60; // Paso fijo de simulación.
     private static final IntPredicate NINGUNA = tecla -> false; // Sin teclas presionadas.
 

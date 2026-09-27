@@ -1,23 +1,26 @@
 package com.graphics.ciudad.mundo; // Agrupa lo que forma la ciudad: mapa, edificios, decoración y semáforos.
 
 import com.graphics.ciudad.motor.Cubo; // Dibuja cada elemento como una caja transformada.
+import com.graphics.ciudad.motor.Figuras; // Cilindro y prisma para los techos de los edificios.
 import java.util.ArrayList; // Lista de marcas viales.
 import java.util.List; // Tipo de la lista de marcas viales.
 
 /**
  * CIUDAD: transforma el Mapa en geometría.
  * Responsable de: dibujar la base de asfalto, las marcas viales de las calles, las aceras, los edificios
- * con su cubierta y el césped de los parques.
- * Se comunica con: Mapa (lee celdas, centros y alturas) y Cubo (dibuja cada pieza). Juego la dibuja
+ * (su forma según el tipo la arma Edificio) y el césped de los parques.
+ * Se comunica con: Mapa (lee celdas y centros), Edificio (volúmenes y techos) y Cubo (dibuja cada pieza). Juego la dibuja
  * primero en cada pase, antes del auto, las farolas y la decoración.
  */
 public class Ciudad {
 
     private final Cubo cubo; // Geometría compartida con la que se construye toda la ciudad.
+    private final Edificio edificio; // Arma y dibuja cada edificio según su tipo.
 
-    /** Recibe el cubo con el que se dibujará la ciudad. */
-    public Ciudad(Cubo cubo) {
+    /** Recibe el cubo y las figuras con los que se dibujará la ciudad. */
+    public Ciudad(Cubo cubo, Figuras figuras) {
         this.cubo = cubo; // Guarda la referencia para usarla en cada cuadro.
+        this.edificio = new Edificio(cubo, figuras); // Calcula una vez la forma de todos los edificios.
     }
 
     // ==================== CIUDAD A PARTIR DE UNA MATRIZ ====================
@@ -35,13 +38,7 @@ public class Ciudad {
                 } else { // Las demás celdas representan manzanas completas.
                     cubo.caja(x, 0.15f, z, Mapa.TAM_CELDA, 0.3f, Mapa.TAM_CELDA, 0.60f, 0.64f, 0.66f); // Dibuja la acera elevada sobre el asfalto.
                     if (tipo == Mapa.EDIFICIO) { // Selecciona una manzana ocupada por un edificio.
-                        float altura = Mapa.alturaEdificio(fila, columna); // Varía la altura de forma reproducible entre 5 y 13.
-                        float rojo = 0.28f + columna * 0.045f; // Varía el tono rojo según la columna.
-                        float verde = 0.34f + ((fila + columna) % 3) * 0.05f; // Alterna tres tonos de verde entre manzanas vecinas.
-                        float azul = 0.48f + fila * 0.025f; // Varía el tono azul según la fila.
-                        float ancho = Mapa.ANCHO_EDIFICIO; // Toma el ancho de la base definido en Mapa.
-                        cubo.caja(x, altura / 2 + 0.3f, z, ancho, altura, ancho, rojo, verde, azul); // Coloca la base del edificio sobre la acera.
-                        cubo.caja(x, altura + 0.45f, z, ancho + 0.3f, 0.3f, ancho + 0.3f, 0.20f, 0.26f, 0.32f); // Añade una cubierta más ancha y oscura.
+                        edificio.dibujar(fila, columna); // Torre, bloque, escalonado, casa baja o doble, con su techo.
                     } else { // El tipo 2 representa un parque.
                         cubo.caja(x, 0.32f, z, 9, 0.1f, 9, 0.20f, 0.45f, 0.28f); // Cubre la parcela con césped verde.
                     }

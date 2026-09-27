@@ -46,8 +46,8 @@ public class Juego {
     private final Shader shader = new Shader(); // Programa GLSL compartido por todos los dibujos.
     private final Cubo cubo = new Cubo(shader); // Geometría única con la que se construye todo.
     private final Camara camara = new Camara(Mapa.LIMITE); // Cámara de seguimiento o vista aérea ajustada al tamaño del mapa.
-    private final Ciudad ciudad = new Ciudad(cubo); // Ciudad generada a partir del Mapa.
-    private final Figuras figuras = new Figuras(shader); // Mallas redondeadas generadas por fórmulas.
+    private final Figuras figuras = new Figuras(shader); // Mallas redondeadas y prisma, generadas por fórmulas.
+    private final Ciudad ciudad = new Ciudad(cubo, figuras); // Ciudad generada a partir del Mapa.
     private final Cabina cabina = new Cabina(shader, cubo); // Cabina de los autos: perfil extruido con vidrios.
     private final Decoracion decoracion = new Decoracion(shader, cubo, figuras); // Detalles urbanos de la ciudad terminada.
     private final Auto auto = new Auto(); // Vehículo del jugador; no necesita OpenGL para existir.
@@ -81,7 +81,7 @@ public class Juego {
     /** Crea la ventana, compila los shaders y sube el cubo a la GPU. */
     private void iniciar() {
         ventana.crear(NOMBRE_JUEGO, this::tecla); // Crea la ventana y entrega cada tecla presionada a tecla().
-        ventana.configurarMouse(camara::arrastrar, camara::zoom); // El mouse maneja la cámara orbital del auto.
+        ventana.configurarMouse(camara::arrastrar, camara::desplazar, camara::zoom); // El mouse maneja la orbital del auto y la aérea.
         shader.crear(SHADER_VERTICES, SHADER_FRAGMENTOS); // Compila y enlaza los shaders que transforman y colorean los vértices.
         cubo.crear(); // Guarda en la GPU el cubo que servirá para todos los objetos.
         figuras.crear(); // Sube a la GPU la esfera, el cilindro y el cono.

@@ -6,7 +6,8 @@ import java.util.List; // Tipo de esas listas.
 /**
  * MAPA: plano de la ciudad descrito como una matriz de celdas.
  * Responsable de: guardar MAPA (0 = calle, 1 = edificio, 2 = parque), el tamaño de cada celda, los límites
- * calculados a partir de MAPA.length, la conversión entre índices y coordenadas y la altura de cada edificio.
+ * calculados a partir de MAPA.length y la conversión entre índices y coordenadas. La forma y la altura de cada
+ * edificio las decide Edificio.
  * Coordenadas: X = izquierda/derecha; Y = altura; Z = profundidad. Las filas corresponden a Z y las columnas a X.
  * Se comunica con: Ciudad y Decoracion (lo recorren para dibujar), Colisiones (lo recorre para bloquear al auto),
  * Juego (pasa LIMITE a Camara y muestra el sector en el HUD) y Minimapa (ajusta la vista superior a LIMITE y
@@ -173,10 +174,5 @@ public final class Mapa {
             }
         }
         return lista; // Parques del mapa.
-    }
-
-    /** Calcula la altura del edificio de una celda; Ciudad y Decoracion usan el mismo valor. */
-    public static float alturaEdificio(int fila, int columna) {
-        return 5 + (fila * 3 + columna * 7) % 9; // Varía la altura de forma reproducible entre 5 y 13.
     }
 }
