@@ -20,6 +20,7 @@ import com.graphics.ciudad.mundo.Mapa; // Aporta el límite de la ciudad a la c�
 import com.graphics.ciudad.trafico.Trafico; // Vehículos autónomos que recorren la ciudad.
 import com.graphics.ciudad.vehiculo.Auto; // Vehículo del jugador.
 import com.graphics.ciudad.vehiculo.Cabina; // Cabina trapezoidal extruida, compartida por el jugador y el tráfico.
+import com.graphics.ciudad.vehiculo.Colisiones; // Manzanas y bordes; Juego le suma el tráfico para el deslizamiento.
 import com.graphics.ciudad.vehiculo.IndicadorJugador; // Flecha flotante sobre el auto en la vista aérea.
 import java.util.function.IntPredicate; // Pregunta si una tecla está presionada; las pruebas pueden simularlo.
 import org.lwjgl.glfw.GLFWErrorCallback; // Muestra los errores de GLFW en la consola.
@@ -171,13 +172,12 @@ public class Juego {
         // En el menú o en pausa el paso de tiempo es 0: el mismo código se ejecuta, pero nada se mueve ni avanza.
         deltaTime = estado.dtEfectivo(deltaTime); // Tiempo real al jugar, 0 en menú o pausa.
         relojGlobal += deltaTime; // Avanza el reloj de la animación urbana en todos los cuadros.
-        float antesX = auto.getX(); // Guarda la posición previa por si el movimiento choca con el tráfico.
-        float antesZ = auto.getZ(); // Guarda la posición previa en profundidad.
-        auto.actualizar(deltaTime, teclado); // Procesa aceleración, giro y colisiones; reemplaza la cámara orbital de la primera lección.
-        if (trafico.bloquea(antesX, antesZ, auto.getX(), auto.getZ(), Auto.RADIO_AUTO)) { // Círculo contra círculo con cada vehículo.
-            auto.detenerEn(antesX, antesZ); // El jugador no atraviesa el tráfico: vuelve atrás y se detiene.
-        }
-        trafico.actualizar(deltaTime, auto.getX(), auto.getZ()); // Mueve los vehículos; frenan si el jugador está adelante.
+        // Una posición es libre si no toca manzanas ni bordes (círculo contra rectángulo) ni al tráfico (círculo contra
+        // círculo). Mientras Auto prueba, getX()/getZ() siguen siendo la posición de partida del cuadro.
+        Colisiones.PosicionLibre libre = (nx, nz) -> Colisiones.puedeCircular(nx, nz)
+            && !trafico.bloquea(auto.getX(), auto.getZ(), nx, nz, Auto.RADIO_AUTO);
+        auto.actualizar(deltaTime, teclado, libre); // Aceleración, giro y colisiones con deslizamiento por ejes.
+        trafico.actualizar(deltaTime, auto.getX(), auto.getZ()); // Mueve los vehículos; frenan si el jugador les cierra el carril.
         actualizarTitulo(); // Muestra los controles y la velocidad actual.
         entregas.actualizar(deltaTime, auto); // Añade el objetivo del juego al movimiento del auto.
         camara.actualizarSeguimiento(deltaTime, auto.getX(), auto.getZ(), auto.getAngulo()); // Recorta o recupera la distancia detrás del auto.

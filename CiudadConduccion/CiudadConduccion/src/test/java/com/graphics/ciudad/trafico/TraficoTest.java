@@ -17,6 +17,8 @@ public class TraficoTest extends TestCase {
     private static final float LEJOS = 1000; // Posición del jugador fuera del mapa: no frena a nadie.
     private static final float MARGEN_GIRO = 8; // En los 8 primeros y últimos metros de cada tramo el vehículo está girando.
     private static final float TOLERANCIA_CARRIL = 0.35f; // Error admitido respecto a DESPLAZAMIENTO_CARRIL en los tramos rectos.
+    private static final float FRACCION_RECORRIDO_MINIMO = 0.4f; // En 120 s cada vehículo recorre al menos el 40 % de crucero × tiempo.
+    private static final float TOLERANCIA = 1e-4f; // Error de redondeo admitido en las velocidades.
 
     /** Crea el tráfico sin OpenGL. */
     private Trafico nuevoTrafico() {
@@ -24,7 +26,11 @@ public class TraficoTest extends TestCase {
         return new Trafico(shader, new Cubo(shader), () -> true); // Las rutas y el movimiento no necesitan la GPU; noche fija.
     }
 
-    /** Durante 120 s los vehículos siempre están en calles, dentro del mapa, sin tocar manzanas, y siguen moviéndose. */
+    /**
+     * Durante 120 s los vehículos siempre están en calles, dentro del mapa, sin tocar manzanas, y siguen moviéndose.
+     * Como ahora frenan también unos ante otros, además se comprueba que NUNCA se solapan entre sí y que TODOS recorren
+     * una distancia mínima total: si dos se esperaran mutuamente en un cruce, alguno quedaría trabado y fallaría.
+     */
     public void testSimulacionDeDosMinutos() {
         Trafico trafico = nuevoTrafico(); // Tráfico recién creado.
         List<Vehiculo> vehiculos = trafico.getVehiculos(); // Vehículos a observar.
@@ -33,6 +39,8 @@ public class TraficoTest extends TestCase {
         int pasos = Math.round(SEGUNDOS / DT); // Cantidad de cuadros simulados.
         int pasosPorVentana = Math.round(VENTANA_MOVIMIENTO / DT); // Cuadros entre controles de movimiento.
         float[] recorrido = new float[vehiculos.size()]; // Distancia acumulada en la ventana actual.
+        float[] recorridoTotal = new float[vehiculos.size()]; // Distancia acumulada en los 120 s.
+        float minimaEntreCentros = 2 * Vehiculo.RADIO_VEHICULO; // Dos círculos se solapan si sus centros están más cerca.
         for (int paso = 0; paso < pasos; paso++) { // Avanza la simulación cuadro a cuadro.
             float[][] antes = new float[vehiculos.size()][2]; // Posiciones antes del cuadro.
             for (int i = 0; i < vehiculos.size(); i++) { // Guarda la posición de cada vehículo.
@@ -46,7 +54,14 @@ public class TraficoTest extends TestCase {
                 assertTrue(donde, Mapa.esCalleEn(v.getX(), v.getZ())); // Siempre sobre una celda de calle.
                 assertTrue(donde, Math.abs(v.getX()) <= limite && Math.abs(v.getZ()) <= limite); // Nunca fuera del mapa.
                 assertTrue(donde, Colisiones.puedeCircular(v.getX(), v.getZ())); // Su círculo nunca invade una manzana.
-                recorrido[i] += (float) Math.hypot(v.getX() - antes[i][0], v.getZ() - antes[i][1]); // Suma lo avanzado.
+                float avance = (float) Math.hypot(v.getX() - antes[i][0], v.getZ() - antes[i][1]); // Lo avanzado en el cuadro.
+                recorrido[i] += avance; // Suma a la ventana.
+                recorridoTotal[i] += avance; // Suma al total.
+                for (int j = i + 1; j < vehiculos.size(); j++) { // Cada par de vehículos una sola vez.
+                    Vehiculo otro = vehiculos.get(j);
+                    float separacion = (float) Math.hypot(v.getX() - otro.getX(), v.getZ() - otro.getZ()); // Entre centros.
+                    assertTrue("solapados " + i + " y " + j + ": " + donde, separacion >= minimaEntreCentros); // Nunca se tocan.
+                }
                 comprobarCarril(v, donde); // En los tramos rectos debe ir por su carril derecho.
             }
             if ((paso + 1) % pasosPorVentana == 0) { // Terminó una ventana de 5 segundos.
@@ -55,6 +70,10 @@ public class TraficoTest extends TestCase {
                     recorrido[i] = 0; // Empieza a medir la siguiente ventana.
                 }
             }
+        }
+        for (int i = 0; i < vehiculos.size(); i++) { // Ninguno quedó trabado: todos recorrieron lo mínimo.
+            float minimo = FRACCION_RECORRIDO_MINIMO * Trafico.VELOCIDADES[i % Trafico.VELOCIDADES.length] * SEGUNDOS;
+            assertTrue("vehiculo " + i + " recorrió " + recorridoTotal[i] + " < " + minimo, recorridoTotal[i] >= minimo);
         }
     }
 
@@ -114,26 +133,118 @@ public class TraficoTest extends TestCase {
         assertEquals(d, enRecta[1][0], 1e-5f); // Mismo desplazamiento d, no 2·d.
     }
 
-    /** El vehículo se detiene si el jugador está justo adelante, y reset() lo devuelve al inicio de la ruta. */
-    public void testFrenaAnteElJugadorYReinicia() {
+    // ==================== FRENADO ANTE EL JUGADOR (regla del corredor) ====================
+
+    /**
+     * Posición {x, z} a "adelante" unidades por delante del vehículo y "derecha" unidades a su derecha
+     * (negativo = izquierda). Frente = (-sen a, -cos a) y derecha = (cos a, -sen a), como en Vehiculo.
+     */
+    private static float[] relativo(Vehiculo v, float adelante, float derecha) {
+        float a = v.getAngulo(); // Orientación del vehículo.
+        float x = v.getX() - (float) Math.sin(a) * adelante + (float) Math.cos(a) * derecha; // Frente + derecha en X.
+        float z = v.getZ() - (float) Math.cos(a) * adelante - (float) Math.sin(a) * derecha; // Frente + derecha en Z.
+        return new float[] {x, z};
+    }
+
+    /** Distancia entre el centro del vehículo y un punto. */
+    private static float distancia(Vehiculo v, float[] punto) {
+        return (float) Math.hypot(v.getX() - punto[0], v.getZ() - punto[1]);
+    }
+
+    /**
+     * El jugador en el carril CONTRARIO (a 2 · DESPLAZAMIENTO_CARRIL a la izquierda) y apenas adelante: con la regla
+     * vieja (semiplano + 6 de radio) el vehículo se detenía; ahora sigue a velocidad de crucero y sin luces de freno.
+     */
+    public void testCarrilContrarioNoFrena() {
         Trafico trafico = nuevoTrafico(); // Tráfico recién creado.
-        Vehiculo v = trafico.getVehiculos().get(0); // Primer vehículo.
-        float frenteX = -(float) Math.sin(v.getAngulo()); // Dirección frontal en X.
-        float frenteZ = -(float) Math.cos(v.getAngulo()); // Dirección frontal en Z.
-        float jugadorX = v.getX() + frenteX * 4; // Jugador cuatro unidades delante.
-        float jugadorZ = v.getZ() + frenteZ * 4; // Jugador cuatro unidades delante.
+        Vehiculo v = trafico.getVehiculos().get(0); // Primer vehículo, en una recta.
+        float crucero = v.getVelocidad(); // Arranca a velocidad de crucero.
+        float[] jugador = relativo(v, 3, -2 * Vehiculo.DESPLAZAMIENTO_CARRIL); // Carril contrario, 3 adelante.
+        assertTrue(distancia(v, jugador) < 6); // La regla vieja lo habría detenido.
+        assertEquals(Vehiculo.SIN_OBSTACULO, v.huecoHasta(jugador[0], jugador[1], Trafico.RADIO_JUGADOR)); // Fuera del corredor.
+        for (int i = 0; i < 30; i++) { // Medio segundo: lo pasa de largo.
+            trafico.actualizar(DT, jugador[0], jugador[1]);
+            assertEquals(crucero, v.getVelocidad(), TOLERANCIA); // No perdió velocidad.
+            assertFalse(v.frenando()); // Ni encendió el freno.
+        }
+    }
+
+    /**
+     * El jugador en el MISMO carril, 10 adelante (hueco 10 − 3.3 = 6.7, dentro de DISTANCIA_FRENADO): el vehículo no
+     * frena en seco. En cada cuadro pierde como mucho DESACELERACION · dt, enciende el freno y nunca lo toca.
+     * (A 7 u/s y con DESACELERACION = 8 necesita 7² / (2 · 8) ≈ 3 unidades para detenerse: el hueco alcanza.)
+     */
+    public void testMismoCarrilFrenaGradualmente() {
+        Trafico trafico = nuevoTrafico();
+        Vehiculo v = trafico.getVehiculos().get(0);
+        float crucero = v.getVelocidad();
+        float[] jugador = relativo(v, 10, 0); // Mismo carril, 10 adelante.
+        trafico.actualizar(DT, jugador[0], jugador[1]); // Un cuadro.
+        assertTrue(v.getVelocidad() < crucero); // Empezó a frenar...
+        assertTrue(v.getVelocidad() >= crucero - Vehiculo.DESACELERACION * DT - TOLERANCIA); // ...sin bajar más de lo permitido.
+        assertTrue(v.getVelocidad() > 0); // No se detuvo de golpe.
+        assertTrue(v.frenando()); // Luces de freno encendidas.
+        float anterior = v.getVelocidad();
+        for (int i = 0; i < 180; i++) { // Tres segundos más.
+            trafico.actualizar(DT, jugador[0], jugador[1]);
+            assertTrue(v.getVelocidad() <= anterior + TOLERANCIA); // La velocidad nunca sube: sigue frenando.
+            assertTrue(anterior - v.getVelocidad() <= Vehiculo.DESACELERACION * DT + TOLERANCIA); // Ni cae de golpe.
+            assertTrue(distancia(v, jugador) >= Vehiculo.RADIO_VEHICULO + Trafico.RADIO_JUGADOR); // Nunca lo toca.
+            anterior = v.getVelocidad();
+        }
+        assertTrue(v.getVelocidad() < 1); // Terminó casi detenido detrás del jugador...
+        float hueco = distancia(v, jugador) - Vehiculo.RADIO_VEHICULO - Trafico.RADIO_JUGADOR; // Espacio que dejó.
+        assertTrue("hueco " + hueco, hueco > 0.5f * Vehiculo.DISTANCIA_DETENCION); // ...sin llegar a tocarlo.
+    }
+
+    /**
+     * El jugador PEGADO adelante (4 entre centros: hueco 0.7, menor que DISTANCIA_DETENCION): el vehículo termina
+     * detenido, sin atravesarlo, con el freno encendido mientras espera. Al irse el jugador vuelve a andar, y reset()
+     * lo devuelve al inicio de la ruta.
+     */
+    public void testPegadoAdelanteSeDetieneYReinicia() {
+        Trafico trafico = nuevoTrafico();
+        Vehiculo v = trafico.getVehiculos().get(0);
         float xInicial = v.getX(); // Posición antes de actualizar.
-        float zInicial = v.getZ(); // Posición antes de actualizar.
-        trafico.actualizar(DT, jugadorX, jugadorZ); // Actualiza con el jugador cerrando el paso.
-        assertEquals(xInicial, v.getX(), 1e-6f); // No avanzó en X.
-        assertEquals(zInicial, v.getZ(), 1e-6f); // No avanzó en Z.
+        float zInicial = v.getZ();
+        float[] jugador = relativo(v, 4, 0); // Mismo carril, pegado.
+        for (int i = 0; i < 120; i++) { // Dos segundos.
+            trafico.actualizar(DT, jugador[0], jugador[1]);
+            assertTrue(distancia(v, jugador) >= Vehiculo.RADIO_VEHICULO + Trafico.RADIO_JUGADOR - TOLERANCIA); // No lo atraviesa.
+        }
+        assertEquals(0f, v.getVelocidad(), TOLERANCIA); // Detenido.
+        assertTrue(v.frenando()); // Esperando con el freno.
         for (int i = 0; i < 600; i++) { // Diez segundos sin jugador cerca.
-            trafico.actualizar(DT, LEJOS, LEJOS); // Se mueve libremente.
+            trafico.actualizar(DT, LEJOS, LEJOS); // Arranca de a poco y se mueve libremente.
         }
         assertTrue(Math.hypot(v.getX() - xInicial, v.getZ() - zInicial) > 1); // Se alejó del inicio.
         trafico.reset(); // Mismo reinicio que la tecla R.
         assertEquals(xInicial, v.getX(), 1e-6f); // Vuelve al primer waypoint en X.
         assertEquals(zInicial, v.getZ(), 1e-6f); // Vuelve al primer waypoint en Z.
+        assertFalse(v.frenando()); // Y sin luces de freno.
+    }
+
+    /** El jugador DETRÁS, en el mismo carril: el vehículo no frena. */
+    public void testDetrasNoFrena() {
+        Trafico trafico = nuevoTrafico();
+        Vehiculo v = trafico.getVehiculos().get(0);
+        float crucero = v.getVelocidad();
+        float[] jugador = relativo(v, -4, 0); // Cuatro detrás.
+        assertEquals(Vehiculo.SIN_OBSTACULO, v.huecoHasta(jugador[0], jugador[1], Trafico.RADIO_JUGADOR));
+        for (int i = 0; i < 30; i++) { // Medio segundo.
+            trafico.actualizar(DT, jugador[0], jugador[1]);
+            assertEquals(crucero, v.getVelocidad(), TOLERANCIA); // Sigue a velocidad de crucero.
+        }
+    }
+
+    /** factorPorHueco: 1 libre, 0 a DISTANCIA_DETENCION o menos, lineal en el medio. */
+    public void testFactorPorHueco() {
+        assertEquals(1f, Vehiculo.factorPorHueco(Vehiculo.SIN_OBSTACULO), 0f); // Camino libre.
+        assertEquals(1f, Vehiculo.factorPorHueco(Vehiculo.DISTANCIA_FRENADO), 1e-6f); // Borde de la zona de frenado.
+        assertEquals(0f, Vehiculo.factorPorHueco(Vehiculo.DISTANCIA_DETENCION), 1e-6f); // Quiere estar detenido.
+        assertEquals(0f, Vehiculo.factorPorHueco(-1), 0f); // Ya lo toca.
+        float medio = (Vehiculo.DISTANCIA_FRENADO + Vehiculo.DISTANCIA_DETENCION) / 2; // Mitad de la zona.
+        assertEquals(0.5f, Vehiculo.factorPorHueco(medio), 1e-6f);
     }
 
     /** El jugador no puede meterse dentro de un vehículo, pero sí alejarse de él. */

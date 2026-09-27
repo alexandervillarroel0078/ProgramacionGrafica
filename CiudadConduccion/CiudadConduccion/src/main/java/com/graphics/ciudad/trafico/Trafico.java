@@ -3,6 +3,7 @@ package com.graphics.ciudad.trafico; // Agrupa el tráfico autónomo: vehículos
 import com.graphics.ciudad.motor.Cubo; // Dibuja los vehículos.
 import com.graphics.ciudad.motor.Shader; // Activa la emisión de las luces traseras.
 import com.graphics.ciudad.mundo.Mapa; // Convierte celdas en coordenadas y comprueba que las rutas usen calles.
+import com.graphics.ciudad.vehiculo.Auto; // Radio del círculo del jugador.
 import com.graphics.ciudad.vehiculo.Cabina; // Cabina compartida con el auto del jugador.
 import com.graphics.ciudad.vehiculo.Colisiones; // Prueba círculo contra círculo con el auto del jugador.
 import java.util.ArrayList; // Lista de vehículos creados.
@@ -13,12 +14,13 @@ import java.util.function.BooleanSupplier; // Consulta de día/noche que se entr
 /**
  * TRAFICO: conjunto de vehículos autónomos que recorren la ciudad.
  * Responsable de: definir las rutas (RUTAS_CELDAS), validarlas contra el Mapa, crear un Vehiculo por ruta,
- * actualizarlos con dt, detenerlos si el jugador les cierra el paso, impedir que el jugador los atraviese,
+ * actualizarlos con dt, hacerlos frenar ante el jugador u otro vehículo en su carril, impedir que el jugador los atraviese,
  * reiniciarlos con R, dibujarlos y enviar al shader los focos de sus faros (solo de noche).
  * Día/noche no se guarda aquí: se recibe como BooleanSupplier (Iluminacion::esNoche) y se pasa a cada Vehiculo.
  * Se comunica con: Mapa (celdas y coordenadas), Vehiculo (cada auto), Colisiones (círculo contra círculo), Cubo y
  * Shader (dibujo) y Juego (lo actualiza, lo reinicia y le pregunta si un movimiento del jugador choca).
- * Los vehículos no chocan entre sí: cada uno circula por el carril derecho de su sentido. Las rutas 1 y 4 comparten
+ * Los vehículos no chocan entre sí: cada uno circula por el carril derecho de su sentido y frena ante otro que tenga
+ * adelante en su corredor (la misma regla que con el jugador; ver actualizar()). Las rutas 1 y 4 comparten
  * la calle de la fila 4 (Z = -10) en sentidos opuestos, así se ve que usan carriles distintos; el resto de las rutas
  * solo se cruzan en intersecciones.
  */
@@ -43,6 +45,7 @@ public class Trafico {
 
     public static final int MAX_FAROS_TRAFICO = 16; // Focos que admite iluminacion.frag (uFarosTrafico[16]): hasta 8 vehículos.
     public static final int FAROS_POR_VEHICULO = 2; // Cada vehículo proyecta un foco por faro delantero.
+    public static final float RADIO_JUGADOR = Auto.RADIO_AUTO; // Círculo del jugador como obstáculo del tráfico.
 
     // ==================== 2. ESTADO ====================
     private final Shader shader; // Programa que recibe el interruptor de emisión.
@@ -93,12 +96,53 @@ public class Trafico {
 
     // ==================== 3. ACTUALIZACIÓN, CHOQUES Y REINICIO ====================
 
-    /** Mueve todos los vehículos; cada uno se detiene si el jugador (jugadorX, jugadorZ) está justo adelante. */
+    /**
+     * Mueve todos los vehículos. Cada uno frena por el obstáculo más cercano de su corredor (Vehiculo.huecoHasta):
+     * el jugador (jugadorX, jugadorZ) o cualquier otro vehículo, con la misma regla. Para otro vehículo se mira también
+     * su trayectoria de los próximos segundos (Vehiculo.huecoHastaTrayectoria), así los cruces se ven con tiempo.
+     * Primero se calculan todos los huecos y después se mueven todos, así el orden de la lista no cambia el resultado.
+     */
     public void actualizar(float deltaTime, float jugadorX, float jugadorZ) {
-        for (Vehiculo vehiculo : vehiculos) { // Actualiza cada vehículo por separado.
-            boolean jugadorAdelante = vehiculo.tieneAdelante(jugadorX, jugadorZ); // Evita que el tráfico empuje al jugador.
-            vehiculo.actualizar(deltaTime, jugadorAdelante); // Avanza por su ruta o espera.
+        int cantidad = vehiculos.size(); // Número de vehículos.
+        float[] huecos = new float[cantidad]; // Hueco de cada vehículo hasta su obstáculo más cercano.
+        for (int i = 0; i < cantidad; i++) { // Vehículo que decide si frena.
+            Vehiculo vehiculo = vehiculos.get(i);
+            float hueco = vehiculo.huecoHasta(jugadorX, jugadorZ, RADIO_JUGADOR); // El jugador, con su círculo.
+            for (int j = 0; j < cantidad; j++) { // Posibles obstáculos: los demás vehículos.
+                if (j != i && cede(i, j)) { // Solo frena por el otro si en ese par le toca ceder.
+                    hueco = Math.min(hueco, vehiculo.huecoHastaTrayectoria(vehiculos.get(j))); // El más cercano.
+                }
+            }
+            huecos[i] = hueco;
         }
+        for (int i = 0; i < cantidad; i++) { // Ahora sí, mueve a todos.
+            vehiculos.get(i).actualizar(deltaTime, huecos[i]); // Avanza por su ruta, frenando si hace falta.
+        }
+    }
+
+    /**
+     * Indica si el vehículo i debe ceder ante el j. Si solo uno ve al otro, cede ese. Si se ven los DOS, esperarían los
+     * dos para siempre (espera mutua); entonces cede uno solo:
+     *  - si uno tiene al otro físicamente adelante en su carril y el otro no, cede el de atrás (el de adelante sigue
+     *    y se aleja, como en una fila);
+     *  - si no (se cruzan, o los dos se tienen adelante), cede el de índice mayor. Es una prioridad fija: no cambia de
+     *    un cuadro al otro, así nunca pasa que los dos crean tener paso al mismo tiempo.
+     */
+    private boolean cede(int i, int j) {
+        Vehiculo a = vehiculos.get(i);
+        Vehiculo b = vehiculos.get(j);
+        if (a.huecoHastaTrayectoria(b) == Vehiculo.SIN_OBSTACULO) { // i no ve a j: no hay nada que ceder.
+            return false;
+        }
+        if (b.huecoHastaTrayectoria(a) == Vehiculo.SIN_OBSTACULO) { // Solo i ve a j: cede i.
+            return true;
+        }
+        boolean aTieneAdelanteB = a.huecoHasta(b.getX(), b.getZ(), Vehiculo.RADIO_VEHICULO) != Vehiculo.SIN_OBSTACULO;
+        boolean bTieneAdelanteA = b.huecoHasta(a.getX(), a.getZ(), Vehiculo.RADIO_VEHICULO) != Vehiculo.SIN_OBSTACULO;
+        if (aTieneAdelanteB != bTieneAdelanteA) { // Uno está detrás del otro.
+            return aTieneAdelanteB; // Cede el de atrás.
+        }
+        return i > j; // Cruce: prioridad fija por índice.
     }
 
     /** Indica si mover al jugador de (antesX, antesZ) a (despuesX, despuesZ) lo haría atravesar un vehículo. */

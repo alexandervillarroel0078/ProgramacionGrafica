@@ -130,4 +130,74 @@ public class AutoTest extends TestCase {
         }
         assertFalse(atras.enReversa()); // Detenido: la luz de reversa se apaga.
     }
+
+    /**
+     * Deslizamiento por ejes: el auto está pegado a la pared oeste de una manzana (X bloqueado) y avanza en diagonal
+     * hacia el noreste, contra ella. Antes quedaba clavado con velocidad 0; ahora anula solo el eje X y sigue hacia
+     * el norte por Z, sin meterse en la manzana y conservando velocidad.
+     */
+    public void testDeslizaEnDiagonalContraUnaManzana() {
+        float paredX = com.graphics.ciudad.mundo.Mapa.centro(1) - com.graphics.ciudad.mundo.Mapa.TAM_CELDA / 2; // Cara oeste de la columna 1.
+        Auto auto = new Auto(); // En la salida: calle oeste, al lado de la manzana de la fila 9, columna 1.
+        auto.x = paredX - Auto.RADIO_AUTO - 0.01f; // El círculo casi toca la manzana.
+        auto.angulo = (float) Math.toRadians(-15); // Frente = (sen 15°, -cos 15°): norte y un poco hacia la pared.
+        auto.velocidad = 10; // Avanzando.
+        float xInicial = auto.getX();
+        float zInicial = auto.getZ();
+        float bordeNorte = com.graphics.ciudad.mundo.Mapa.centro(Auto.FILA_SALIDA) - com.graphics.ciudad.mundo.Mapa.TAM_CELDA / 2; // Fin de la manzana.
+        for (int i = 0; i < 60; i++) { // Un segundo con W.
+            auto.actualizar(DT, teclas(GLFW_KEY_W));
+            assertTrue(com.graphics.ciudad.vehiculo.Colisiones.puedeCircular(auto.getX(), auto.getZ())); // Nunca la invade.
+            if (auto.getZ() - Auto.RADIO_AUTO > bordeNorte) { // Mientras sigue al costado de la manzana...
+                assertTrue(auto.getX() <= xInicial + 1e-4f); // ...el eje X queda anulado.
+            }
+        }
+        assertTrue("avanzó " + (zInicial - auto.getZ()), zInicial - auto.getZ() > 3); // Deslizó hacia el norte.
+        assertTrue(auto.getVelocidad() > 1); // No quedó clavado.
+        assertTrue(com.graphics.ciudad.vehiculo.Colisiones.puedeCircular(auto.getX(), auto.getZ())); // Posición válida.
+
+        Auto deFrente = new Auto(); // Mismo lugar, pero mirando al este: directo contra la pared.
+        deFrente.x = auto.x = paredX - Auto.RADIO_AUTO - 0.01f;
+        deFrente.angulo = (float) -Math.PI / 2; // Frente = (1, 0).
+        deFrente.velocidad = 10;
+        deFrente.actualizar(DT, teclas(GLFW_KEY_W));
+        assertEquals(0f, deFrente.getVelocidad(), 1e-5f); // De frente no hay eje libre útil: se detiene.
+        assertEquals(zInicial, deFrente.getZ(), 1e-5f); // Y no se corre de costado.
+    }
+
+    /**
+     * El roce depende del tiempo, no de los cuadros: el mismo segundo rozando el borde oeste del mapa (una pared continua
+     * de 100 unidades) con W, a 30, 60 y 144 cuadros por segundo, termina con la misma velocidad y la misma posición.
+     * Con el factor por cuadro de antes, a 144 FPS el auto quedaba casi detenido y a 30 FPS seguía rápido.
+     */
+    public void testRoceIndependienteDeLosFps() {
+        int[] fpsProbados = {30, 60, 144}; // Frecuencias de dibujo a comparar.
+        float[][] resultados = new float[fpsProbados.length][]; // {velocidad, x, z} al cabo de 1 s.
+        for (int k = 0; k < fpsProbados.length; k++) {
+            Auto auto = rozandoElBordeOeste(); // Mismo estado inicial para todos.
+            float dt = 1f / fpsProbados[k]; // Tiempo entre cuadros.
+            for (int cuadro = 0; cuadro < fpsProbados[k]; cuadro++) { // Exactamente un segundo.
+                auto.actualizar(dt, teclas(GLFW_KEY_W));
+            }
+            resultados[k] = new float[] {auto.getVelocidad(), auto.getX(), auto.getZ()};
+        }
+        Auto referencia = rozandoElBordeOeste();
+        for (int k = 0; k < fpsProbados.length; k++) {
+            String fps = fpsProbados[k] + " FPS";
+            assertEquals(fps, resultados[1][0], resultados[k][0], 0.05f); // Misma velocidad que a 60 FPS.
+            assertEquals(fps, resultados[1][1], resultados[k][1], 1e-4f); // Misma X: pegado al borde.
+            assertEquals(fps, resultados[1][2], resultados[k][2], 0.05f); // Mismo avance hacia el norte.
+            assertEquals(fps, referencia.getX(), resultados[k][1], 1e-4f); // No atravesó el borde.
+            assertTrue(fps, referencia.getZ() - resultados[k][2] > 5); // Y deslizó de verdad.
+        }
+    }
+
+    /** Auto en la calle del borde oeste, con el círculo tocando el límite, a 10 u/s y 15° hacia la pared. */
+    private static Auto rozandoElBordeOeste() {
+        Auto auto = new Auto();
+        auto.x = -(com.graphics.ciudad.mundo.Mapa.LIMITE - Auto.RADIO_AUTO); // Justo en el límite permitido.
+        auto.angulo = (float) Math.toRadians(15); // Frente = (-sen 15°, -cos 15°): norte y un poco hacia el oeste.
+        auto.velocidad = 10;
+        return auto;
+    }
 }

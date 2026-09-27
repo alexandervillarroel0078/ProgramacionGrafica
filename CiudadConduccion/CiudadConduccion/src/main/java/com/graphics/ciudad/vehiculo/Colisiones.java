@@ -8,9 +8,20 @@ import com.graphics.ciudad.mundo.Mapa; // Proporciona las manzanas y los límite
  * usando el punto más cercano y la distancia al cuadrado, y de impedir salir por los bordes del mapa.
  * También ofrece la prueba círculo contra círculo que usa Trafico para que el jugador no atraviese otros vehículos.
  * Se comunica con: Mapa (celdas y límites), Auto (lo consulta antes de moverse) y Trafico. No usa OpenGL.
- * El círculo de colisión es conservador para contener todas las piezas; el choque detiene al auto, sin rebotes.
+ * El círculo de colisión es conservador para contener todas las piezas. Al chocar, Auto prueba cada eje por separado
+ * y desliza por el que está libre (ver Auto.actualizar); solo se detiene si ambos ejes están bloqueados.
  */
 public final class Colisiones {
+
+    /**
+     * Pregunta "¿el auto cabe en (x, z)?". Auto la recibe ya armada: por defecto es puedeCircular (manzanas y bordes);
+     * Juego le suma el tráfico. Así el deslizamiento por ejes funciona igual contra cualquier obstáculo.
+     */
+    @FunctionalInterface
+    public interface PosicionLibre {
+        /** Devuelve true si el círculo del auto puede ocupar (x, z). */
+        boolean libre(float x, float z);
+    }
 
     // ==================== COLISIONES CON LA CIUDAD ====================
 

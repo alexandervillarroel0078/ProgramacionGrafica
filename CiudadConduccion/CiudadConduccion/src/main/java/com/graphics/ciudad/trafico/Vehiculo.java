@@ -14,7 +14,7 @@ import java.util.function.BooleanSupplier; // Pregunta a Iluminacion si es de no
 /**
  * VEHICULO: un auto autónomo que recorre una ruta cíclica de waypoints.
  * Responsable de: su estado (posición, orientación, velocidad y color), seguir la ruta girando suavemente hacia el
- * próximo waypoint, frenar en las curvas y cuando el jugador está adelante, reiniciarse y dibujarse con piezas.
+ * próximo waypoint, frenar en las curvas y ante un obstáculo en su carril, reiniciarse y dibujarse con piezas.
  * Se comunica con: Trafico (lo crea con una ruta ya validada y lo actualiza con dt), Cubo y Shader (dibujo).
  * LUCES: se encienden solas de noche y se apagan de día. El vehículo no guarda si es de noche: consulta a
  * Iluminacion.esNoche() a través de un BooleanSupplier, así hay una única variable día/noche en todo el juego.
@@ -24,6 +24,12 @@ import java.util.function.BooleanSupplier; // Pregunta a Iluminacion si es de no
  * línea amarilla. Cada tramo se desplaza DESPLAZAMIENTO_CARRIL hacia la DERECHA de su dirección de avance.
  * Con esta convención de ejes, la derecha de una dirección (dx, dz) es (-dz, dx): mirando al norte (0, -1) la derecha
  * es (1, 0) = este, y mirando al oeste (-1, 0) la derecha es (0, -1) = norte. Equivale a (cos(ángulo), -sen(ángulo)).
+ * FRENADO (regla del corredor): un obstáculo (el jugador u otro vehículo) solo cuenta si está ADELANTE, dentro del
+ * corredor de su carril (|lateral| < MEDIO_CORREDOR) y a menos de DISTANCIA_FRENADO. Ante un obstáculo la velocidad
+ * no salta: cambia como máximo DESACELERACION al frenar y ACELERACION_TRAFICO al arrancar (la reducción por curva
+ * sigue siendo inmediata, para no abrir el giro). Con otro vehículo se mira además su trayectoria de los próximos
+ * PREVISION segundos. Mientras la velocidad baja, las luces de freno se encienden con las mismas reglas que el jugador
+ * (LucesVehiculo: el freno domina).
  */
 public class Vehiculo {
 
@@ -32,13 +38,25 @@ public class Vehiculo {
     public static final float VELOCIDAD_GIRO = 2.2f; // Máximo giro por segundo, en radianes: limita qué tan rápido cambia de dirección.
     public static final float RADIO_WAYPOINT = 2; // Al acercarse a menos de esta distancia, pasa al siguiente waypoint.
     public static final float FRACCION_MINIMA_CURVA = 0.3f; // En una curva cerrada circula al 30 % de su velocidad de crucero.
-    public static final float DISTANCIA_PRECAUCION = 6; // Si el jugador está adelante a menos de esto, el vehículo se detiene.
     public static final float DESPLAZAMIENTO_CARRIL = Mapa.TAM_CELDA / 4; // 1/4 del ancho de la calle (2.5): centro del carril derecho.
     public static final float DISTANCIA_ANTICIPACION = 4; // Mira este tramo por delante sobre su carril: corrige desvíos sin zigzaguear.
 
+    // ==================== 1a. FRENADO ANTE OBSTÁCULOS (valores ajustables) ====================
+    // "Hueco" = espacio libre entre los dos círculos a lo largo del frente: distancia longitudinal menos ambos radios.
+    public static final float DISTANCIA_FRENADO = 8; // Con un hueco menor que esto empieza a frenar.
+    public static final float DISTANCIA_DETENCION = 1; // Con un hueco menor que esto quiere estar detenido.
+    public static final float MEDIO_CORREDOR = 2.2f; // Medio ancho del corredor: medio auto + medio obstáculo + margen. El carril contrario está a 5.
+    public static final float DESACELERACION = 8; // Máxima pérdida de velocidad, en unidades por segundo cuadrado.
+    public static final float ACELERACION_TRAFICO = 4; // Máxima ganancia de velocidad al volver a arrancar, en u/s².
+    public static final float SIN_OBSTACULO = Float.POSITIVE_INFINITY; // Hueco cuando no hay nada que lo haga frenar.
+    public static final float UMBRAL_LUZ_FRENO = 0.5f; // Desaceleración mínima (u/s²) que enciende las luces de freno.
+    public static final float UMBRAL_DETENIDO = 0.05f; // Por debajo de esta velocidad (u/s) se considera detenido.
+    public static final float PREVISION = 1.5f; // Segundos hacia adelante que se mira la trayectoria de OTRO vehículo.
+    public static final int MUESTRAS_PREVISION = 6; // Puntos en que se divide ese intervalo (cada 0.25 s).
+
     // ==================== 1b. LUCES DEL VEHÍCULO (valores ajustables) ====================
     // Ubicación, tamaño y colores de faros y luces traseras: están en vehiculo/LucesVehiculo, compartidos con el auto
-    // del jugador. El tráfico no frena con luces: de noche muestra luces de posición.
+    // del jugador. De noche muestra luces de posición; al frenar, rojo intenso de día y de noche (el freno domina).
 
     // ==================== 2. ESTADO ====================
     private final float[][] ruta; // Waypoints {x, z} en centros de celdas de calle; la ruta es cíclica.
@@ -53,6 +71,8 @@ public class Vehiculo {
     float angulo; // Orientación en radianes; cero apunta hacia -Z.
     float velocidad; // Velocidad actual en unidades por segundo.
     int siguiente; // Índice del waypoint hacia el que se dirige.
+    float velocidadPermitida; // Velocidad que deja el obstáculo más cercano; cambia de a poco (frenado gradual).
+    boolean frenando; // true mientras la velocidad baja (o espera detenido ante un obstáculo): luces de freno.
 
     /** Crea el vehículo con su ruta, su velocidad de crucero y su color, y lo coloca al inicio de la ruta. */
     public Vehiculo(float[][] ruta, float velocidadCrucero, float rojo, float verde, float azul, BooleanSupplier esNoche) {
@@ -114,12 +134,17 @@ public class Vehiculo {
         siguiente = 1 % ruta.length; // Se dirige al segundo waypoint (o al mismo si la ruta tuviera uno solo).
         angulo = anguloHacia(carriles[siguiente][0], carriles[siguiente][1]); // Arranca ya orientado hacia su destino.
         velocidad = velocidadCrucero; // Arranca a velocidad de crucero.
+        velocidadPermitida = velocidadCrucero; // Sin obstáculos al empezar.
+        frenando = false; // Sin luces de freno.
     }
 
     // ==================== 3. MOVIMIENTO POR CUADRO ====================
 
-    /** Avanza el vehículo deltaTime segundos; si jugadorAdelante es true, se detiene para no chocarlo. */
-    public void actualizar(float deltaTime, boolean jugadorAdelante) {
+    /**
+     * Avanza el vehículo deltaTime segundos. hueco es el espacio libre hasta el obstáculo más cercano de su corredor
+     * (ver huecoHasta), o SIN_OBSTACULO. Trafico lo calcula para todos antes de mover a ninguno.
+     */
+    public void actualizar(float deltaTime, float hueco) {
         float[] tramo = tramoCarril(); // {inicioX, inicioZ, dirX, dirZ, largo, avance} del tramo actual del carril.
         if (tramo[4] - tramo[5] < RADIO_WAYPOINT) { // Comprueba si ya llegó: le falta menos que RADIO_WAYPOINT.
             siguiente = (siguiente + 1) % ruta.length; // Pasa al siguiente waypoint; el módulo hace la ruta cíclica.
@@ -138,15 +163,51 @@ public class Vehiculo {
 
         // En recta (diferencia ≈ 0) el coseno vale 1 y circula a velocidad de crucero; en una curva cerrada frena.
         float factorCurva = Math.max(FRACCION_MINIMA_CURVA, (float) Math.cos(diferencia)); // Nunca baja del mínimo.
-        velocidad = velocidadCrucero * factorCurva; // Velocidad deseada para este cuadro.
-        if (jugadorAdelante) { // Comprueba si el auto del jugador le cierra el paso.
-            velocidad = 0; // Espera detenido hasta que el camino quede libre.
+        float objetivo = velocidadCrucero * factorPorHueco(hueco); // Velocidad que permite el obstáculo.
+
+        // Frenado gradual ante obstáculos: velocidadPermitida se acerca al objetivo sin cambiar más que DESACELERACION
+        // (al frenar) o ACELERACION_TRAFICO (al arrancar) por segundo. Así no frena en seco ni sale disparado.
+        if (objetivo < velocidadPermitida) { // Tiene que perder velocidad.
+            velocidadPermitida = Math.max(objetivo, velocidadPermitida - DESACELERACION * deltaTime); // Baja lo permitido.
+        } else { // Puede ganar velocidad.
+            velocidadPermitida = Math.min(objetivo, velocidadPermitida + ACELERACION_TRAFICO * deltaTime); // Sube lo permitido.
+        }
+        // La curva, en cambio, sigue limitando al instante (como antes): si entrara rápido abriría el giro y pisaría
+        // el carril contrario o la vereda. La velocidad final es la menor de las dos.
+        float velocidadAntes = velocidad; // Para saber si está frenando.
+        velocidad = Math.min(velocidadPermitida, velocidadCrucero * factorCurva); // Obstáculo gradual, curva inmediata.
+
+        // Nunca atraviesa al obstáculo: si el paso de este cuadro fuera más largo que el hueco (alguien se le cruzó
+        // demasiado cerca para frenar a tiempo), avanza solo hasta tocarlo y se detiene, como el jugador contra una pared.
+        float paso = velocidad * deltaTime; // Distancia que recorrería en este cuadro.
+        if (paso > hueco) { // El obstáculo está más cerca que el paso.
+            paso = Math.max(0, hueco); // Avanza hasta el contacto (o nada, si ya lo toca).
+            velocidad = 0; // El contacto lo detiene.
+            velocidadPermitida = 0; // Y al volver a arrancar lo hace desde cero, de a poco.
+        }
+
+        // Luces de freno: encendidas mientras la velocidad baja con cierta intensidad, o mientras espera detenido
+        // ante un obstáculo (con el pie en el freno). En pausa (deltaTime = 0) conservan su estado.
+        if (deltaTime > 0) { // Con el tiempo detenido no hay cambio de velocidad que medir.
+            boolean bajando = velocidadAntes - velocidad > UMBRAL_LUZ_FRENO * deltaTime; // Desacelera de verdad.
+            boolean esperando = velocidad < UMBRAL_DETENIDO && hueco < DISTANCIA_FRENADO; // Detenido por un obstáculo.
+            frenando = bajando || esperando; // Cualquiera de las dos enciende el freno.
         }
 
         float frenteX = -(float) Math.sin(angulo); // Obtiene la componente X del frente del vehículo.
         float frenteZ = -(float) Math.cos(angulo); // Obtiene la componente Z; con ángulo cero vale -1.
-        x += frenteX * velocidad * deltaTime; // Avanza en X según la velocidad y el tiempo.
-        z += frenteZ * velocidad * deltaTime; // Avanza en Z según la velocidad y el tiempo.
+        x += frenteX * paso; // Avanza en X lo permitido en este cuadro.
+        z += frenteZ * paso; // Avanza en Z lo permitido en este cuadro.
+    }
+
+    /**
+     * Fracción de la velocidad de crucero que permite el hueco: 1 con el camino libre (hueco ≥ DISTANCIA_FRENADO),
+     * 0 con el obstáculo a DISTANCIA_DETENCION o menos, y en el medio crece en línea recta. Como la velocidad deseada
+     * baja a medida que se acerca, el vehículo va frenando cada vez más suave y queda detenido a DISTANCIA_DETENCION.
+     */
+    static float factorPorHueco(float hueco) {
+        float fraccion = (hueco - DISTANCIA_DETENCION) / (DISTANCIA_FRENADO - DISTANCIA_DETENCION); // 0 a 1 en la zona de frenado.
+        return Math.max(0, Math.min(1, fraccion)); // Recorta: nunca negativa ni mayor que 1 (infinito da 1).
     }
 
     /** Tramo actual del carril: {inicioX, inicioZ, dirX, dirZ, largo, avance}; avance es la proyección del vehículo. */
@@ -166,15 +227,51 @@ public class Vehiculo {
         return new float[] {desde[0], desde[1], hasta[0], hasta[1]}; // Extremos de la línea central del tramo.
     }
 
-    /** Indica si el punto (px, pz) está delante del vehículo y a menos de DISTANCIA_PRECAUCION. */
-    public boolean tieneAdelante(float px, float pz) {
-        float haciaX = px - x; // Vector del vehículo al punto, en X.
-        float haciaZ = pz - z; // Vector del vehículo al punto, en Z.
-        float frenteX = -(float) Math.sin(angulo); // Dirección frontal en X.
-        float frenteZ = -(float) Math.cos(angulo); // Dirección frontal en Z.
-        boolean delante = haciaX * frenteX + haciaZ * frenteZ > 0; // Producto escalar positivo: el punto está hacia el frente.
-        boolean cerca = haciaX * haciaX + haciaZ * haciaZ < DISTANCIA_PRECAUCION * DISTANCIA_PRECAUCION; // Compara al cuadrado.
-        return delante && cerca; // Solo frena por lo que tiene cerca y adelante.
+    /**
+     * Hueco hasta un obstáculo circular de centro (px, pz) y radio radioObstaculo, o SIN_OBSTACULO si no lo afecta.
+     * Regla del corredor: el vector hacia el obstáculo se descompone en coordenadas del vehículo,
+     *   longitudinal = hacia · frente  (cuánto está por delante) y  lateral = hacia · derecha  (cuánto está al costado),
+     * con frente = (-sen a, -cos a) y derecha = (cos a, -sen a). Cuenta solo si longitudinal > 0 (ADELANTE),
+     * |lateral| < MEDIO_CORREDOR (en su MISMO carril; el carril contrario está a 2 · DESPLAZAMIENTO_CARRIL = 5) y el
+     * hueco (longitudinal − ambos radios) es menor que DISTANCIA_FRENADO. Puede ser negativo si ya se tocan.
+     */
+    /**
+     * Hueco hasta otro vehículo contando dónde está AHORA y dónde estará en los próximos PREVISION segundos si sigue
+     * derecho a su velocidad actual. Es la misma regla del corredor aplicada a varios puntos de su camino.
+     * Por qué: en un cruce los dos se acercan en perpendicular; ninguno entra en el corredor del otro hasta que ya es
+     * tarde para frenar de a poco. Mirando la trayectoria, el que cede ve venir al otro con tiempo.
+     */
+    public float huecoHastaTrayectoria(Vehiculo otro) {
+        float frenteX = -(float) Math.sin(otro.angulo); // Hacia dónde avanza el otro.
+        float frenteZ = -(float) Math.cos(otro.angulo);
+        float hueco = SIN_OBSTACULO; // Nada a la vista, por ahora.
+        for (int k = 0; k <= MUESTRAS_PREVISION; k++) { // k = 0 es la posición actual.
+            float t = PREVISION * k / MUESTRAS_PREVISION; // Segundos hacia el futuro.
+            float px = otro.x + frenteX * otro.velocidad * t; // Dónde estará el otro, en X.
+            float pz = otro.z + frenteZ * otro.velocidad * t; // Y en Z.
+            hueco = Math.min(hueco, huecoHasta(px, pz, RADIO_VEHICULO)); // El punto más comprometido.
+        }
+        return hueco;
+    }
+
+    /** Distancia al costado de (px, pz), con signo (positiva = a la derecha): hacia · derecha. */
+    public float lateralHasta(float px, float pz) {
+        float angulo = this.angulo; // Orientación del vehículo.
+        return (px - x) * (float) Math.cos(angulo) - (pz - z) * (float) Math.sin(angulo); // derecha = (cos a, -sen a).
+    }
+
+    public float huecoHasta(float px, float pz, float radioObstaculo) {
+        float haciaX = px - x; // Vector del vehículo al obstáculo, en X.
+        float haciaZ = pz - z; // Vector del vehículo al obstáculo, en Z.
+        float seno = (float) Math.sin(angulo); // Orientación del vehículo.
+        float coseno = (float) Math.cos(angulo);
+        float longitudinal = haciaX * -seno + haciaZ * -coseno; // Proyección sobre el frente.
+        float lateral = lateralHasta(px, pz); // Proyección sobre la derecha.
+        if (longitudinal <= 0 || Math.abs(lateral) >= MEDIO_CORREDOR) { // Detrás, o en otro carril / al costado.
+            return SIN_OBSTACULO; // No lo hace frenar.
+        }
+        float hueco = longitudinal - RADIO_VEHICULO - radioObstaculo; // Espacio libre entre los dos círculos.
+        return hueco < DISTANCIA_FRENADO ? hueco : SIN_OBSTACULO; // Lejos: todavía no importa.
     }
 
     /** Calcula el ángulo que apunta desde la posición actual hacia (destinoX, destinoZ). */
@@ -225,7 +322,7 @@ public class Vehiculo {
         float[] ladosLuces = {-LADO_LUZ, LADO_LUZ}; // Define la separación lateral de las luces.
         boolean encendidas = lucesEncendidas(); // Se consulta una vez por dibujo: de noche encendidas, de día apagadas.
         float[] faro = LucesVehiculo.colorFaro(encendidas); // Blanco emisivo encendido o gris oscuro apagado.
-        float[] trasera = LucesVehiculo.colorTrasera(encendidas, false); // Luz de posición de noche; el tráfico no frena con luces.
+        float[] trasera = LucesVehiculo.colorTrasera(encendidas, frenando); // Freno > posición de noche > apagada.
         float[] tf = LucesVehiculo.TAMANO_FARO; // Medidas del faro.
         float[] tt = LucesVehiculo.TAMANO_TRASERA; // Medidas de la luz trasera.
         for (float ladoX : ladosLuces) { // Repite el dibujo para ambos lados.
@@ -266,5 +363,10 @@ public class Vehiculo {
     /** Devuelve la velocidad actual en unidades por segundo. */
     public float getVelocidad() {
         return velocidad; // Velocidad actual.
+    }
+
+    /** Indica si las luces de freno están encendidas: la velocidad baja o espera detenido ante un obstáculo. */
+    public boolean frenando() {
+        return frenando; // Estado calculado en actualizar().
     }
 }

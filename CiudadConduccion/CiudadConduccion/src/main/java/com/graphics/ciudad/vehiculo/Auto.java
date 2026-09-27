@@ -28,6 +28,8 @@ public class Auto {
     public static final float ACELERACION = 9; // Aceleración del motor, en unidades por segundo cuadrado.
     public static final float RESISTENCIA = 0.7f; // Pérdida de velocidad normal al rodar, por segundo (decaimiento exponencial).
     public static final float FRENO = 7; // Pérdida de velocidad mientras se mantiene Espacio: diez veces la resistencia normal.
+    public static final float FRICCION_ROCE = 30; // Desaceleración (u/s²) al rozar una pared de frente; se escala por la fracción bloqueada.
+    public static final float FRACCION_MINIMA_DESLIZAMIENTO = 0.1f; // Con menos frente en el eje libre (≈ 84° contra la pared) se detiene.
     public static final float VELOCIDAD_GIRO = 0.11f; // Radianes girados por segundo y por unidad de velocidad: el giro crece con la velocidad.
 
     // ==================== 0b. RUEDAS, DIRECCIÓN Y LUCES (valores ajustables) ====================
@@ -81,17 +83,35 @@ public class Auto {
         enReversa = false; // Sin luz de reversa.
     }
 
-    /** Devuelve el auto a una posición anterior y lo detiene; Juego lo usa cuando el movimiento chocaría con el tráfico. */
-    public void detenerEn(float xAnterior, float zAnterior) {
-        x = xAnterior; // Recupera la última posición X sin choque.
-        z = zAnterior; // Recupera la última posición Z sin choque.
-        velocidad = 0; // El choque detiene al auto, igual que contra una manzana: sin rebote.
-    }
-
     // ==================== 3. MOVIMIENTO POR CUADRO ====================
 
-    /** Actualiza la conducción; deltaTime contiene los segundos transcurridos entre cuadros. */
+    /** Actualiza la conducción chocando solo contra manzanas y bordes (sin tráfico); la usan las pruebas. */
     public void actualizar(float deltaTime, IntPredicate pulsada) {
+        actualizar(deltaTime, pulsada, Colisiones::puedeCircular); // Misma física, con la ciudad como único obstáculo.
+    }
+
+    /**
+     * Actualiza la conducción; deltaTime contiene los segundos transcurridos entre cuadros y libre dice si el auto
+     * cabe en una posición (Juego combina manzanas, bordes y tráfico).
+     *
+     * DESLIZAMIENTO POR EJES. Si el paso completo (dx, dz) choca, no se descarta entero: se prueba cada eje por
+     * separado, primero el de mayor desplazamiento. Una pared de la ciudad es paralela a X o a Z, así que cuando el
+     * auto la roza en diagonal solo UNO de los dos componentes la atraviesa: se anula ese y se conserva el otro, y el
+     * auto "resbala" a lo largo de la pared en lugar de quedar pegado. Solo si ningún eje está libre se detiene.
+     * REPARTO DE LA VELOCIDAD. La velocidad es un número a lo largo del frente (-sen a, -cos a). Al deslizar, el
+     * desplazamiento del cuadro usa solo la componente del eje libre, así que el auto avanza velocidad · |frente del eje
+     * libre| a lo largo de la pared. La velocidad, además, pierde por ROCE una desaceleración FRICCION_ROCE escalada por
+     * la fracción bloqueada (1 − |frente del eje libre|): rozando casi en paralelo casi no frena; cuanto más de frente,
+     * más frena. Con la pared de frente (fracción libre < FRACCION_MINIMA_DESLIZAMIENTO) se detiene, como antes.
+     * Al no quedar en cero, el giro (proporcional a la velocidad) sigue funcionando y el jugador puede separarse de la
+     * pared sin dar marcha atrás.
+     * POR QUÉ RESTAR Y NO MULTIPLICAR. Multiplicar la velocidad por un factor fijo (por ejemplo 0.9) en CADA cuadro
+     * depende de los FPS: a 30 FPS se multiplica 30 veces por segundo (0.9³⁰ ≈ 0.04) y a 144 FPS, 144 veces
+     * (0.9¹⁴⁴ ≈ 0.0000003): el mismo segundo de roce frena distinto según la pantalla. Restar desaceleración · dt no
+     * depende: en un segundo la suma de los dt es 1 con cualquier FPS, así que siempre se pierde FRICCION_ROCE · fracción
+     * por segundo (la resistencia de arriba también es independiente: e^(−k·dt) repetido da e^(−k·1) en un segundo).
+     */
+    public void actualizar(float deltaTime, IntPredicate pulsada, Colisiones.PosicionLibre libre) {
         float velocidadAntes = velocidad; // Velocidad al empezar el cuadro: decide si S frena o acelera en reversa.
         float acelerador = 0; // Sin teclas pulsadas no se aplica aceleración del motor.
         boolean teclaAtras = pulsada.test(GLFW_KEY_S) || pulsada.test(GLFW_KEY_DOWN); // S o flecha abajo.
@@ -141,13 +161,34 @@ public class Auto {
         float siguienteX = x + frenteX * velocidad * deltaTime; // Propone la nueva posición X.
         float siguienteZ = z + frenteZ * velocidad * deltaTime; // Propone la nueva posición Z.
 
-        if (Colisiones.puedeCircular(siguienteX, siguienteZ)) { // Comprueba la posición antes de mover el auto.
+        float antesX = x; // Posición al empezar el cuadro: sirve para medir lo que avanzó de verdad.
+        float antesZ = z;
+
+        if (libre.libre(siguienteX, siguienteZ)) { // Paso completo: ningún eje choca.
             x = siguienteX; // Acepta el desplazamiento horizontal.
             z = siguienteZ; // Acepta el desplazamiento en profundidad.
-            anguloRueda += giroPorDistancia(velocidad * deltaTime); // Las ruedas giran lo que avanzó el auto (con signo).
-        } else { // La posición propuesta invadiría una manzana o saldría del mapa.
-            velocidad = 0; // Detiene el auto conservando su última posición válida.
+        } else { // El paso completo chocaría: se intenta deslizar por un solo eje.
+            float fraccionLibre = -1; // Parte del frente que va en el eje libre; -1 = ningún eje libre.
+            boolean xPrimero = Math.abs(siguienteX - x) >= Math.abs(siguienteZ - z); // Primero el eje que más se mueve.
+            if (xPrimero && libre.libre(siguienteX, z)) { // Solo X: la pared está en la dirección Z.
+                x = siguienteX; // Conserva el avance en X y anula el de Z.
+                fraccionLibre = Math.abs(frenteX);
+            } else if (libre.libre(x, siguienteZ)) { // Solo Z: la pared está en la dirección X.
+                z = siguienteZ; // Conserva el avance en Z y anula el de X.
+                fraccionLibre = Math.abs(frenteZ);
+            } else if (!xPrimero && libre.libre(siguienteX, z)) { // Z estaba bloqueado: último intento con X.
+                x = siguienteX; // Conserva el avance en X.
+                fraccionLibre = Math.abs(frenteX);
+            }
+            if (fraccionLibre < FRACCION_MINIMA_DESLIZAMIENTO) { // Esquina, o pared de frente: no hay por dónde resbalar.
+                velocidad = 0; // Se detiene en su última posición válida, sin rebote.
+            } else { // Desliza: el roce le quita velocidad en proporción al tiempo, no a los cuadros.
+                float perdida = FRICCION_ROCE * (1 - fraccionLibre) * deltaTime; // Desaceleración · dt.
+                velocidad = Math.signum(velocidad) * Math.max(0, Math.abs(velocidad) - perdida); // Frena sin cambiar de sentido.
+            }
         }
+        float avance = (x - antesX) * frenteX + (z - antesZ) * frenteZ; // Lo recorrido a lo largo del frente (con signo).
+        anguloRueda += giroPorDistancia(avance); // Las ruedas giran lo que avanzó el auto: menos si deslizó.
         enReversa = velocidad < -UMBRAL_MOVIMIENTO; // Enciende la luz de reversa mientras el auto va hacia atrás.
     }
 
