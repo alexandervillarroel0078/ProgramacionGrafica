@@ -21,9 +21,11 @@ import static org.lwjgl.glfw.GLFW.*; // Incluye las constantes de las teclas N y
  * (posición y frente de los faros) y Juego (teclas, título y orden de dibujo). Decoracion usa esNoche().
  * El shader calcula iluminación local, sin sombras reales; Sombras agrega manchas oscuras (sombras falsas) bajo los objetos.
  *
- * FAROLAS EN LA VEREDA: el poste se planta sobre la acera de una manzana (edificio o parque), junto al cordón del lado
- * que da a la calle, y un brazo curvo lleva la bombilla BRAZO_FAROLA unidades hacia la calle, como en las calles
- * reales: la luz cae sobre la calzada, pero nada de la farola se apoya en ella ni participa en colisiones.
+ * FAROLAS EN LA VEREDA DE LOS EDIFICIOS: el poste se planta sobre la acera de una manzana con EDIFICIO, en la franja de
+ * mobiliario junto al cordón del lado que da a la calle, y un brazo curvo lleva la bombilla BRAZO_FAROLA unidades hacia
+ * la calle, como en las calles reales: la luz cae sobre la calzada y la vereda, pero nada de la farola se apoya en la
+ * calzada ni participa en colisiones. Nunca van del lado de un parque: su acera mide solo 0.5 (el poste la ocupa
+ * entera) y el parque ya se ilumina con sus propias luminarias globo (Parque.LUMINARIAS, en uGlobos).
  *
  * MODELO DE LA FAROLA (sección 4), de abajo hacia arriba, solo con las figuras de los árboles:
  *   base (cilindro corto y ancho) → poste (dos cilindros, el de arriba más delgado) → brazo curvo (tres cilindros
@@ -47,7 +49,9 @@ public class Iluminacion {
     public static final int SUR = 1; // Lado que da a la calle del sur.
     public static final int OESTE = 2; // Lado que da a la calle del oeste.
     public static final int ESTE = 3; // Lado que da a la calle del este.
-    public static final float MARGEN_POSTE = 0.4f; // Distancia del cordón al poste, hacia adentro de la acera (la acera de un parque mide 0.5).
+    // Distancia del cordón al poste, hacia adentro de la acera: la base (0.42) ocupa de 0.19 a 0.61 del cordón, dentro de
+    // la franja de mobiliario de la vereda del edificio (del cordón hasta 0.8, donde empieza el toldo; la vereda mide 1.5).
+    public static final float MARGEN_POSTE = 0.4f;
     public static final float BRAZO_FAROLA = 1.5f; // Largo del brazo horizontal: la bombilla sobresale 1.1 sobre el borde de la calzada.
     public static final float ALTURA_BOMBILLA = 4.5f; // Altura de la bombilla sobre el suelo; el brazo pasa justo por encima.
     public static final float ALTURA_ACERA = 0.3f; // El poste nace sobre la acera, que Ciudad dibuja con 0.3 de alto.
@@ -75,7 +79,7 @@ public class Iluminacion {
     public static final float[] COLOR_BOMBILLA_DIA = {0.82f, 0.82f, 0.80f}; // Gris claro, apagada y sin emisión.
     public static final float[] COLOR_BOMBILLA_NOCHE = {1.0f, 0.92f, 0.72f}; // Blanco cálido, emisiva.
 
-    // FORMATO DE LUCES: cada farola es {fila, columna, lado}. (fila, columna) es una celda de MANZANA (edificio o parque)
+    // FORMATO DE LUCES: cada farola es {fila, columna, lado}. (fila, columna) es una celda de MANZANA CON EDIFICIO
     // y lado indica qué borde de esa manzana da a la calle donde va la farola: NORTE, SUR, OESTE o ESTE. El poste se
     // ubica en el centro de ese borde, MARGEN_POSTE hacia adentro de la acera, y la bombilla BRAZO_FAROLA hacia la calle.
     // Las ubicaciones no se escriben a mano: las elige calcularLuces() con los criterios de la sección 1b.
@@ -115,8 +119,10 @@ public class Iluminacion {
 
     /**
      * FAROLA VÁLIDA: el borde "lado" de la manzana (fila, columna) sirve para una farola del sector si:
-     *  - EN LA VEREDA: la celda es una manzana (edificio o parque) y por ese lado hay una calle; el poste queda en la
-     *    acera y solo la bombilla sobresale sobre la calzada (nunca el poste en la calle);
+     *  - EN LA VEREDA DE UN EDIFICIO: la celda es una manzana con edificio y por ese lado hay una calle; el poste
+     *    queda en la franja de mobiliario y solo la bombilla sobresale sobre la calzada (nunca el poste en la calle).
+     *    Los parques quedan afuera: se iluminan con sus globos, y su acera de 0.5 es demasiado angosta. Una farola en
+     *    la vereda de ENFRENTE de un parque sí vale: está sobre la acera de un edificio;
      *  - A MITAD DE CUADRA: el poste va en el centro del borde, lo más lejos posible de las dos esquinas (lo garantiza
      *    posicion());
      *  - EN SU SECTOR: el poste cae dentro del sector que se está iluminando;
@@ -125,8 +131,8 @@ public class Iluminacion {
      */
     static boolean farolaValida(int fila, int columna, int lado, int sector) {
         int[] haciaCalle = Mapa.VECINOS[lado]; // Dirección de la calle.
-        if (Mapa.esCalle(fila, columna) || !Mapa.esCalleSegura(fila + haciaCalle[0], columna + haciaCalle[1])) {
-            return false; // No es una manzana, o ese lado no da a una calle.
+        if (Mapa.tipo(fila, columna) != Mapa.EDIFICIO || !Mapa.esCalleSegura(fila + haciaCalle[0], columna + haciaCalle[1])) {
+            return false; // No es la vereda de un edificio (es calle o parque), o ese lado no da a una calle.
         }
         int[] farola = {fila, columna, lado};
         float[] poste = posicion(farola, MARGEN_POSTE); // Sobre la acera.

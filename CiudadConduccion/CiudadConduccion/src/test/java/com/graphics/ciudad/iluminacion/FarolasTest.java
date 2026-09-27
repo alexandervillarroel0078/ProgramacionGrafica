@@ -25,7 +25,7 @@ public class FarolasTest extends TestCase {
         for (int i = 0; i < Iluminacion.LUCES.length; i++) { // Revisa cada farola.
             int[] f = Iluminacion.LUCES[i]; // {fila, columna, lado}.
             String que = "farola " + f[0] + "," + f[1] + " lado " + f[2]; // Mensaje de error útil.
-            assertFalse(que, Mapa.esCalle(f[0], f[1])); // La celda es una manzana (edificio o parque).
+            assertEquals(que, Mapa.EDIFICIO, Mapa.tipo(f[0], f[1])); // La celda es una manzana con edificio.
             int[] haciaCalle = Mapa.VECINOS[f[2]]; // Dirección del lado indicado.
             assertTrue(que, Mapa.esCalleSegura(f[0] + haciaCalle[0], f[1] + haciaCalle[1])); // Por ese lado hay una calle.
             float[] poste = Iluminacion.POSTES[i]; // Posición del poste.
@@ -91,6 +91,33 @@ public class FarolasTest extends TestCase {
         }
         for (int s = 0; s < porSector.length; s++) {
             assertEquals(Mapa.NOMBRES_SECTORES[s], Iluminacion.FAROLAS_POR_SECTOR[s], porSector[s]); // Cuota del sector.
+        }
+    }
+
+    /**
+     * Farolas de calle solo en veredas de edificios: ninguna está en la vereda de un parque (ni la regla lo permitiría,
+     * por ningún lado ni sector), y ningún poste queda sobre el pavimento de un parque (senderos, plaza o franjas).
+     * Los parques se iluminan con sus luminarias globo, que no se cuentan acá.
+     */
+    public void testNingunaFarolaEnUnParque() {
+        for (int[] p : Mapa.parques()) { // La regla descarta cualquier borde de parque.
+            for (int lado = 0; lado < Mapa.VECINOS.length; lado++) {
+                for (int sector = 0; sector < Mapa.SECTORES.length; sector++) {
+                    assertFalse("parque " + p[0] + "," + p[1] + " lado " + lado, Iluminacion.farolaValida(p[0], p[1], lado, sector));
+                }
+            }
+        }
+        float radioBase = Iluminacion.ANCHO_BASE / 2; // Lo que el poste ocupa en el piso.
+        for (int i = 0; i < Iluminacion.LUCES.length; i++) {
+            float[] poste = Iluminacion.POSTES[i];
+            String que = "farola " + i;
+            int fila = Mapa.indiceCelda(poste[1]);
+            int columna = Mapa.indiceCelda(poste[0]);
+            assertTrue(que + ": fuera del edificio", Mapa.tipo(fila, columna) == Mapa.EDIFICIO); // En la vereda de un edificio.
+            for (int[] p : Mapa.parques()) {
+                assertFalse(que + ": sobre el pavimento del parque " + p[0] + "," + p[1],
+                    com.graphics.ciudad.mundo.Parque.tocaPavimento(p[0], p[1], poste[0], poste[1], radioBase));
+            }
         }
     }
 
