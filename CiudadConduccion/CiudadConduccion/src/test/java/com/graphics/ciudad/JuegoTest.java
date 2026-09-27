@@ -4,6 +4,7 @@ import com.graphics.ciudad.juego.EstadoPartida; // Estados menú, jugando y paus
 import com.graphics.ciudad.trafico.Vehiculo; // Vehículos del tráfico.
 import java.util.List; // Tipo de la lista de vehículos.
 import junit.framework.TestCase; // Proporciona las comprobaciones de JUnit usadas por Maven.
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_A; // Tecla de girar a la izquierda, simulada.
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_W; // Tecla de acelerar, simulada.
 
 /** Comprueba la pausa y el menú de inicio sin abrir una ventana OpenGL. */
@@ -62,5 +63,22 @@ public class JuegoTest extends TestCase {
         juego.getEstado().alternarPausa(); // P otra vez: reanuda.
         juego.actualizar(DT); // Un cuadro jugando.
         assertTrue(juego.getAuto().getZ() < pausaZ); // El auto vuelve a moverse.
+    }
+
+    /** Tras R la cámara de seguimiento queda justo detrás del auto en la salida, sin barrer desde donde estaba. */
+    public void testReinicioDejaLaCamaraDetrasDelAuto() {
+        Juego juego = new Juego();
+        juego.usarTeclado(tecla -> tecla == GLFW_KEY_W || tecla == GLFW_KEY_A); // Acelera doblando a la izquierda.
+        juego.getEstado().empezar();
+        for (int i = 0; i < CUADROS; i++) {
+            juego.actualizar(DT);
+        }
+        assertTrue(Math.abs(juego.getAuto().getAngulo()) > 0.5f); // El auto dobló.
+        juego.reiniciar(); // R.
+        assertEquals(juego.getAuto().getAngulo(), juego.getCamara().getAnguloCamara(), 0f); // Alineada con el auto...
+        float angulo = juego.getCamara().getAnguloCamara();
+        juego.usarTeclado(tecla -> false); // Suelta todo.
+        juego.actualizar(DT); // Un cuadro después...
+        assertEquals(angulo, juego.getCamara().getAnguloCamara(), 0f); // ...no se movió: no hay barrido.
     }
 }

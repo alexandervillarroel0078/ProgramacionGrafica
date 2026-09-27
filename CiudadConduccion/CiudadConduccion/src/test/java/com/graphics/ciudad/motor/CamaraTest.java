@@ -152,7 +152,7 @@ public class CamaraTest extends TestCase {
     public void testSeguimientoEnElInicioDentroDelLimite() {
         Camara camara = new Camara(Mapa.LIMITE);
         camara.actualizarSeguimiento(0.016f, Auto.X_INICIAL, Auto.Z_INICIAL, 0); // Primer cuadro, mirando al norte.
-        float[] ojo = camara.ojoSeguimiento(Auto.X_INICIAL, Auto.Z_INICIAL, 0);
+        float[] ojo = camara.ojoSeguimiento(Auto.X_INICIAL, Auto.Z_INICIAL);
         float borde = Mapa.LIMITE - Camara.MARGEN_BORDE_CAMARA;
         assertTrue("ojo " + ojo[0] + "," + ojo[2], Math.abs(ojo[0]) <= borde && Math.abs(ojo[2]) <= borde); // Dentro.
         assertTrue(Mapa.esCalleEn(ojo[0], ojo[2])); // Sobre la calle.
@@ -165,7 +165,7 @@ public class CamaraTest extends TestCase {
         float x = Mapa.centro(ultima - 1); // Mitad de una cuadra del borde sur.
         float z = Mapa.centro(ultima);
         camara.actualizarSeguimiento(0.016f, x, z, 0);
-        float[] ojo = camara.ojoSeguimiento(x, z, 0);
+        float[] ojo = camara.ojoSeguimiento(x, z);
         assertTrue("ojo z=" + ojo[2], ojo[2] <= Mapa.LIMITE - Camara.MARGEN_BORDE_CAMARA + 1e-4f); // No pasa el borde.
         assertTrue(camara.getDistanciaSeguimiento() < Camara.DISTANCIA_SEGUIMIENTO); // Tuvo que recortar.
     }
@@ -185,7 +185,7 @@ public class CamaraTest extends TestCase {
         float angulo = (float) (Math.PI / 4); // Frente al noroeste: detrás (+X, +Z) está la manzana del sureste.
         Camara camara = new Camara(Mapa.LIMITE);
         camara.actualizarSeguimiento(0.016f, x, z, angulo);
-        float[] ojo = camara.ojoSeguimiento(x, z, angulo);
+        float[] ojo = camara.ojoSeguimiento(x, z);
         assertTrue("ojo " + ojo[0] + "," + ojo[2], Mapa.esCalleEn(ojo[0], ojo[2])); // El ojo no está sobre la manzana.
         for (int i = 0; i <= 100; i++) { // Toda la línea del ojo al auto, vista desde arriba.
             float t = i / 100f;
@@ -202,10 +202,10 @@ public class CamaraTest extends TestCase {
         for (float z = Mapa.centro(Mapa.MAPA.length / 2); z >= Mapa.centro(1); z -= 0.5f) { // Avanza hacia el norte.
             camara.actualizarSeguimiento(0.016f, x, z, 0);
             assertEquals(Camara.DISTANCIA_SEGUIMIENTO, camara.getDistanciaSeguimiento(), 0f); // Sin atraso ni recorte.
-            float[] ojo = camara.ojoSeguimiento(x, z, 0);
+            float[] ojo = camara.ojoSeguimiento(x, z);
             assertEquals(x, ojo[0], 1e-4f); // Justo detrás.
-            assertEquals(z + Camara.DISTANCIA_SEGUIMIENTO, ojo[2], 1e-4f); // 12 detrás, como antes.
-            assertEquals(Camara.ALTURA_SEGUIMIENTO, ojo[1], 0f); // A 9 de altura.
+            assertEquals(z + Camara.DISTANCIA_SEGUIMIENTO, ojo[2], 1e-4f); // 8 detrás.
+            assertEquals(Camara.alturaSeguimiento(Camara.DISTANCIA_SEGUIMIENTO), ojo[1], 0f); // ≈ 3.5 de altura.
         }
     }
 
@@ -224,6 +224,198 @@ public class CamaraTest extends TestCase {
             anterior = d;
         }
         assertEquals(Camara.DISTANCIA_SEGUIMIENTO, camara.getDistanciaSeguimiento(), 0f); // Volvió a la normal.
+    }
+
+    /** Carril derecho de la calle del borde oeste, a mitad de la ciudad: hacia el norte hay lugar de sobra. */
+    private static final float X_LIBRE = Mapa.centro(0) + Mapa.TAM_CELDA / 4;
+    private static final float Z_LIBRE = Mapa.centro(Mapa.MAPA.length / 2);
+
+    /** Ángulo de la cámara tras unos segundos a ciertos FPS, con el auto quieto en X_LIBRE, Z_LIBRE y ángulo angulo(t). */
+    private static float anguloTras(float segundos, int fps, java.util.function.DoubleUnaryOperator angulo) {
+        Camara camara = new Camara(Mapa.LIMITE);
+        camara.actualizarSeguimiento(0, X_LIBRE, Z_LIBRE, 0); // Primer cuadro: se coloca detrás, mirando al norte.
+        int cuadros = Math.round(segundos * fps);
+        for (int i = 1; i <= cuadros; i++) {
+            camara.actualizarSeguimiento(1f / fps, X_LIBRE, Z_LIBRE, (float) angulo.applyAsDouble(i / (double) fps));
+        }
+        return camara.getAnguloCamara();
+    }
+
+    /**
+     * exp(−K_GIRO · dt) no depende de los FPS: si el auto gira 90° de golpe, medio segundo después la cámara llegó al
+     * mismo ángulo a 30, 60 y 144 FPS, el que da la fórmula continua 90° · (1 − e^(−K_GIRO · 0.5)).
+     */
+    public void testSuavizadoIgualA30_60Y144Fps() {
+        float esperado = (float) (Math.PI / 2 * (1 - Math.exp(-Camara.K_GIRO * 0.5)));
+        for (int fps : new int[] {30, 60, 144}) {
+            float angulo = anguloTras(0.5f, fps, t -> Math.PI / 2); // Giro instantáneo de 90° a la izquierda.
+            assertEquals("fps=" + fps, esperado, angulo, 1e-4f);
+            assertTrue(angulo < Math.PI / 2); // Todavía no llegó: la cámara lo persigue, no lo copia.
+        }
+        // Doblando a fondo a 16 u/s (≈ 101°/s) el atraso casi no depende de los FPS: menos de 2° entre 30 y 144.
+        double omega = 16 * Auto.VELOCIDAD_GIRO;
+        float a30 = anguloTras(1, 30, t -> omega * t);
+        float a144 = anguloTras(1, 144, t -> omega * t);
+        assertEquals(a30, a144, Math.toRadians(2));
+        float atraso = (float) omega - a144; // Cuánto queda atrás la cámara al doblar.
+        assertTrue("atraso=" + Math.toDegrees(atraso), atraso > Math.toRadians(10) && atraso < Math.toRadians(25)); // ≈ 20°: se ve el costado.
+    }
+
+    /** La cámara gira por el camino corto: de 170° a −170° son 20°, no 340°. */
+    public void testSuavizadoGiraPorElCaminoCorto() {
+        assertEquals(0.2f, Camara.diferenciaAngular(0.1f, (float) (2 * Math.PI - 0.1)), 1e-5f);
+        assertEquals((float) (2 * Math.PI - 6), Camara.diferenciaAngular(-3, 3), 1e-5f);
+        for (float a = -20; a <= 20; a += 0.37f) { // Cualquier par de ángulos: el resultado queda en (−π, π].
+            float diferencia = Camara.diferenciaAngular(a, 1.3f);
+            assertTrue(diferencia > -Math.PI - 1e-6 && diferencia <= Math.PI + 1e-6);
+            assertEquals(0, Math.sin(diferencia) - Math.sin(a - 1.3f), 1e-4); // Mismo giro, módulo una vuelta.
+        }
+        float desde = (float) Math.toRadians(170);
+        float hasta = (float) Math.toRadians(-170);
+        Camara camara = new Camara(Mapa.LIMITE);
+        camara.actualizarSeguimiento(0, X_LIBRE, Z_LIBRE, desde); // Se coloca en 170°.
+        camara.actualizarSeguimiento(1 / 60f, X_LIBRE, Z_LIBRE, hasta); // El auto pasa a −170°.
+        float giro = Camara.diferenciaAngular(camara.getAnguloCamara(), desde);
+        assertTrue("giro=" + Math.toDegrees(giro), giro > 0 && giro < Math.toRadians(20)); // Poco y hacia 180°.
+    }
+
+    /**
+     * La cámara mira siempre INCLINACION hacia abajo, aunque el recorte cambie la distancia: en una calle recta, en el
+     * borde sur (recorta) y a 45° en un cruce (recorta más), la altura baja junto con la distancia.
+     */
+    public void testInclinacionConstanteAunqueCambieLaDistancia() {
+        int ultima = Mapa.MAPA.length - 1;
+        int[] cruce = null; // Un cruce interior con una manzana en diagonal hacia el sureste.
+        for (int[] c : Mapa.intersecciones()) {
+            if (c[0] > 0 && c[1] > 0 && !Mapa.esCalleSegura(c[0] + 1, c[1] + 1)) {
+                cruce = c;
+                break;
+            }
+        }
+        assertNotNull(cruce);
+        float[][] casos = { // {x, z, ángulo}
+            {X_LIBRE, Z_LIBRE, 0},
+            {Mapa.centro(ultima - 1), Mapa.centro(ultima), 0},
+            {Mapa.centro(cruce[1]), Mapa.centro(cruce[0]), (float) (Math.PI / 4)},
+        };
+        java.util.Set<Float> distancias = new java.util.HashSet<>();
+        for (float[] caso : casos) {
+            Camara camara = new Camara(Mapa.LIMITE);
+            camara.reiniciarSeguimiento(caso[0], caso[1], caso[2]);
+            float[] ojo = camara.ojoSeguimiento(caso[0], caso[1]);
+            float[] objetivo = Camara.objetivoSeguimiento(caso[0], caso[1], caso[2]);
+            float horizontal = (float) Math.hypot(objetivo[0] - ojo[0], objetivo[2] - ojo[2]);
+            float inclinacion = (float) Math.atan2(ojo[1] - objetivo[1], horizontal); // Hacia abajo, positiva.
+            assertEquals("d=" + camara.getDistanciaSeguimiento(), Camara.INCLINACION, inclinacion, 1e-4f);
+            assertEquals(camara.getDistanciaSeguimiento() + Camara.ADELANTE, horizontal, 1e-3f); // Mira ADELANTE del auto.
+            distancias.add(camara.getDistanciaSeguimiento());
+        }
+        assertEquals(3, distancias.size()); // Las tres distancias fueron distintas: la prueba cubrió el recorte.
+        assertTrue(Camara.alturaSeguimiento(Camara.DISTANCIA_SEGUIMIENTO_MIN) >= Camara.ALTURA_MINIMA_SEGUIMIENTO);
+    }
+
+    /**
+     * Tras R (reiniciarSeguimiento) la cámara queda justo detrás del auto en la salida, sin barrer desde donde estaba:
+     * el ángulo es el del auto y la distancia, toda la libre, desde ese mismo cuadro y en los siguientes.
+     */
+    public void testReinicioSinBarrido() {
+        Camara camara = new Camara(Mapa.LIMITE);
+        int ultima = Mapa.MAPA.length - 1;
+        camara.actualizarSeguimiento(0, X_LIBRE, Z_LIBRE, 0);
+        for (int i = 0; i < 10; i++) { // Dobla hacia el oeste junto al borde sur: queda con atraso.
+            camara.actualizarSeguimiento(1 / 60f, Mapa.centro(ultima - 1), Mapa.centro(ultima), (float) (Math.PI / 2 + i * 0.03));
+        }
+        assertTrue(Math.abs(camara.getAnguloCamara() - Math.PI / 2) > 0.1); // Tenía atraso.
+        camara.reiniciarSeguimiento(Auto.X_INICIAL, Auto.Z_INICIAL, 0); // R.
+        for (int cuadro = 0; cuadro < 3; cuadro++) { // El mismo cuadro y los siguientes: nada se mueve.
+            assertEquals(0f, camara.getAnguloCamara(), 0f); // Alineada con el auto.
+            float[] ojo = camara.ojoSeguimiento(Auto.X_INICIAL, Auto.Z_INICIAL);
+            assertEquals(Auto.X_INICIAL, ojo[0], 1e-4f); // Justo detrás...
+            assertEquals(Auto.Z_INICIAL + Camara.DISTANCIA_SEGUIMIENTO, ojo[2], 1e-4f); // ...a la distancia normal.
+            camara.actualizarSeguimiento(1 / 60f, Auto.X_INICIAL, Auto.Z_INICIAL, 0);
+        }
+    }
+
+    /** Al volver al seguimiento con C, la cámara se coloca detrás del auto sin barrido, aunque el auto haya girado. */
+    public void testVolverConCSinBarrido() {
+        Camara camara = new Camara(Mapa.LIMITE);
+        camara.actualizarSeguimiento(0, X_LIBRE, Z_LIBRE, 0);
+        camara.alternar(); // Orbital.
+        camara.alternar(); // Aérea.
+        camara.alternar(); // Seguimiento otra vez; mientras tanto el auto giró 180°.
+        camara.actualizarSeguimiento(1 / 60f, X_LIBRE, Z_LIBRE, (float) Math.PI);
+        assertEquals((float) Math.PI, camara.getAnguloCamara(), 0f); // Sin atraso.
+        assertEquals(camara.distanciaLibre(X_LIBRE, Z_LIBRE, (float) Math.PI), camara.getDistanciaSeguimiento(), 0f); // Toda la libre.
+    }
+
+    /**
+     * Retrocediendo en recta desde la salida hacia el borde sur a 60 FPS: mientras la cámara está recortada (entre la
+     * distancia mínima y la normal), el ojo queda quieto frente al borde (|ΔojoZ| < 0.01) y la distancia nunca sube.
+     * Con escalones de 0.25 el ojo iba +0.10, +0.10, −0.15: el temblor en reversa.
+     */
+    public void testReversaHaciaElBordeSinTemblor() {
+        Camara camara = new Camara(Mapa.LIMITE);
+        Auto auto = new Auto(); // En la salida, mirando al norte: detrás está el borde sur.
+        java.util.function.IntPredicate s = tecla -> tecla == org.lwjgl.glfw.GLFW.GLFW_KEY_S; // S sostenida.
+        camara.actualizarSeguimiento(0, auto.getX(), auto.getZ(), auto.getAngulo());
+        float anteriorD = camara.getDistanciaSeguimiento();
+        float anteriorZ = camara.ojoSeguimiento(auto.getX(), auto.getZ())[2];
+        boolean anteriorRecortada = false;
+        int recortados = 0; // Cuadros comprobados con la cámara recortada.
+        for (int cuadro = 0; cuadro < 240; cuadro++) { // Cuatro segundos: llega hasta el borde.
+            auto.actualizar(1 / 60f, s);
+            camara.actualizarSeguimiento(1 / 60f, auto.getX(), auto.getZ(), auto.getAngulo());
+            float d = camara.getDistanciaSeguimiento();
+            float z = camara.ojoSeguimiento(auto.getX(), auto.getZ())[2];
+            boolean recortada = d > Camara.DISTANCIA_SEGUIMIENTO_MIN + 1e-4f && d < Camara.DISTANCIA_SEGUIMIENTO;
+            assertTrue("cuadro " + cuadro + ": d sube de " + anteriorD + " a " + d, d <= anteriorD + 1e-6f);
+            if (recortada && anteriorRecortada) {
+                assertEquals("cuadro " + cuadro + ", d=" + d, anteriorZ, z, 0.01f); // Quieto frente al borde.
+                recortados++;
+            }
+            anteriorD = d;
+            anteriorZ = z;
+            anteriorRecortada = recortada;
+        }
+        assertTrue("recortados=" + recortados, recortados > 30); // La prueba cubrió el recorte en reversa.
+        assertEquals(Camara.DISTANCIA_SEGUIMIENTO_MIN, camara.getDistanciaSeguimiento(), 1e-4f); // Terminó contra el borde.
+    }
+
+    /**
+     * Doblando a la izquierda en el centro de un cruce con una manzana al sureste, el rayo de atrás barre esa manzana:
+     * la distancia baja siguiendo la distancia exacta hasta su borde, (TAM_CELDA / 2) / min(sen a, cos a) con a el
+     * ángulo de la cámara, sin escalones de 0.25 (antes se desviaba hasta 0.25 de ella).
+     */
+    public void testGiroALaIzquierdaEnElCruceSinEscalones() {
+        int[] cruce = null; // El mismo cruce del caso a 45°.
+        for (int[] c : Mapa.intersecciones()) {
+            if (c[0] > 0 && c[1] > 0 && !Mapa.esCalleSegura(c[0] + 1, c[1] + 1)) {
+                cruce = c;
+                break;
+            }
+        }
+        assertNotNull(cruce);
+        float x = Mapa.centro(cruce[1]); // Centro del cruce.
+        float z = Mapa.centro(cruce[0]);
+        double omega = 16 * Auto.VELOCIDAD_GIRO; // Doblando a fondo a velocidad máxima (≈ 101°/s).
+        Camara camara = new Camara(Mapa.LIMITE);
+        camara.actualizarSeguimiento(0, x, z, 0); // Mirando al norte.
+        float anterior = camara.getDistanciaSeguimiento();
+        int bajando = 0; // Cuadros en que la distancia bajó.
+        for (int cuadro = 1; cuadro <= 90; cuadro++) {
+            float angulo = (float) Math.min(Math.PI / 2, omega * cuadro / 60); // Gira a la izquierda hasta 90°.
+            camara.actualizarSeguimiento(1 / 60f, x, z, angulo);
+            float d = camara.getDistanciaSeguimiento();
+            if (d < anterior) { // Se está acercando: vale lo que da el recorte en ese cuadro.
+                float a = camara.getAnguloCamara();
+                float exacta = Math.min(Camara.DISTANCIA_SEGUIMIENTO,
+                    Mapa.TAM_CELDA / 2 / (float) Math.min(Math.sin(a), Math.cos(a))); // Hasta el borde de la manzana.
+                assertEquals("cuadro " + cuadro + ", a=" + Math.toDegrees(a), exacta, d, 0.01f);
+                bajando++;
+            }
+            anterior = d;
+        }
+        assertTrue("bajando=" + bajando, bajando >= 3); // La prueba cubrió el recorte.
     }
 
     /** Revisa que elevación y distancia estén dentro de sus límites. */

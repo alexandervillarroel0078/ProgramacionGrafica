@@ -180,7 +180,10 @@ public class Auto {
         }
         float avance = (x - antesX) * frenteX + (z - antesZ) * frenteZ; // Lo recorrido a lo largo del frente (con signo).
         anguloRueda += Rueda.giroPorDistancia(avance); // Las ruedas giran lo que avanzó el auto: menos si deslizó.
-        enReversa = velocidad < -UMBRAL_MOVIMIENTO; // Enciende la luz de reversa mientras el auto va hacia atrás.
+        // Luz de reversa: mientras el auto va hacia atrás, o mientras S pide reversa con el auto detenido (lo contrario de
+        // frenar). Sin la segunda parte, al empujar marcha atrás contra una pared la velocidad pasa de −0.15 a 0 en
+        // cuadros alternados y la luz parpadearía.
+        enReversa = velocidad < -UMBRAL_MOVIMIENTO || (teclaAtras && velocidadAntes <= UMBRAL_MOVIMIENTO);
     }
 
     // ==================== 4. DIBUJO DEL AUTO ====================

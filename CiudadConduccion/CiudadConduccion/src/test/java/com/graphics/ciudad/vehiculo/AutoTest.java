@@ -132,6 +132,26 @@ public class AutoTest extends TestCase {
     }
 
     /**
+     * Marcha atrás contra el borde sur con S apretada: la velocidad pasa de −0.15 a 0 en cuadros alternados, pero la
+     * luz de reversa queda encendida en todos, sin parpadear; y el auto nunca atraviesa el borde.
+     */
+    public void testReversaContraLaParedNoParpadea() {
+        Auto auto = new Auto(); // Mirando al norte: detrás está el borde sur.
+        auto.z = com.graphics.ciudad.mundo.Mapa.LIMITE - Auto.RADIO_AUTO - 1; // A una unidad de tocarlo.
+        boolean choco = false; // Si llegó a quedar detenido por la pared.
+        for (int i = 0; i < 180; i++) { // Tres segundos con S.
+            auto.actualizar(DT, teclas(GLFW_KEY_S));
+            assertTrue("cuadro " + i, auto.enReversa()); // Encendida siempre, también contra la pared.
+            assertFalse(auto.frenando()); // No es freno: S con el auto detenido pide reversa.
+            assertTrue(Colisiones.puedeCircular(auto.getX(), auto.getZ())); // No atraviesa el borde.
+            choco |= auto.getVelocidad() == 0; // La pared lo detuvo al menos una vez.
+        }
+        assertTrue(choco); // La prueba cubrió el caso de la pared.
+        auto.actualizar(DT, NINGUNA); // Suelta S, detenido.
+        assertFalse(auto.enReversa()); // Se apaga.
+    }
+
+    /**
      * Deslizamiento por ejes: el auto está pegado a la pared oeste de una manzana (X bloqueado) y avanza en diagonal
      * hacia el noreste, contra ella. Antes quedaba clavado con velocidad 0; ahora anula solo el eje X y sigue hacia
      * el norte por Z, sin meterse en la manzana y conservando velocidad.

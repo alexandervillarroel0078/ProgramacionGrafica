@@ -14,7 +14,8 @@ import java.util.List; // Tipo de esa lista.
  *
  * TRES REGLAS DE UBICACIÓN:
  *  1. EN LOS PARQUES: junto a cada banco (o cada BANCOS_POR_BASURERO bancos), al costado y apenas detrás del
- *     respaldo, sobre el césped: ni sobre un sendero, ni en la fuente.
+ *     respaldo, sobre el césped: ni sobre el pavimento (senderos, plaza y franjas), ni en la fuente. El costado se
+ *     sortea una vez por parque (Parque.ladoBasureros()), así cada cesto queda junto a un brazo distinto.
  *  2. EN LAS ESQUINAS DE LOS CRUCES CON PASO PEATONAL: en la vereda, "a la salida del paso", del lado de la cuadra.
  *     Entre el cruce y el paso quedan solo 0.5 de vereda (Decoracion.SEPARACION_CRUCE), así que en la esquina misma
  *     un basurero taparía el paso: por eso va justo pasado el paso, sobre la FRANJA DE MOBILIARIO.
@@ -55,8 +56,11 @@ public class Basureros {
     // ---- Regla 1: parques ----
     public static final int BANCOS_POR_BASURERO = 1; // 1 = uno por banco; 2 = uno cada dos bancos.
     public static final float SEPARACION_BANCO = 0.15f; // Aire entre la punta del banco y el basurero.
-    public static final float RETIRO_BANCO = 0.3f; // Cuánto más atrás que el banco (lejos de la fuente): no molesta al sentarse.
-    public static final int SEMILLA_LADO_BANCO = 31; // Elige por qué costado del banco se prueba primero.
+    // RETIRO_BANCO: cuánto más atrás que el banco (lejos de la fuente) va el cesto, para no molestar al sentarse. Con el
+    // banco en el borde de la plaza (Parque.DISTANCIA_BANCO ≈ 2.63), 0.15 deja el cesto a 0.92 del tronco de un árbol
+    // de borde (con 0.3 quedaría a 0.77, menos que DISTANCIA_MIN_TRONCO, y el banco se quedaría sin cesto).
+    public static final float RETIRO_BANCO = 0.15f;
+    public static final int SEMILLA_LADO_BANCO = 31; // Elige el costado de los bancos de cada parque (Parque.ladoBasureros()).
 
     // ---- Regla 2: esquinas ----
     public static final float MARGEN_CORDON = 0.45f; // Del cordón al centro del basurero: sobre la franja de mobiliario.
@@ -92,20 +96,23 @@ public class Basureros {
         return lista;
     }
 
-    /** Regla 1: al costado de cada banco, apenas detrás; si un costado no sirve, se prueba el otro. */
+    /**
+     * Regla 1: al costado de cada banco, apenas detrás. Todos los bancos de un parque usan el MISMO costado
+     * (Parque.ladoBasureros()): si cada banco sorteara el suyo, dos bancos vecinos podrían dejar sus cestos a ambos
+     * lados del mismo brazo, a 1.98 entre sí (menos que DISTANCIA_MIN_ENTRE_BASUREROS), y uno se quedaría sin cesto.
+     * Árboles y luminarias ya le dejan ese lugar libre (Parque.arboles() y luminarias()); el otro costado queda como
+     * reserva por si una señal de la acera lo ocupa.
+     */
     private static void agregarEnParques(List<float[]> lista) {
         for (int[] celda : Mapa.parques()) {
             List<float[]> bancos = Parque.bancos(celda[0], celda[1]);
+            int primero = Parque.ladoBasureros(celda[0], celda[1]); // Un costado para todo el parque.
             for (int i = 0; i < bancos.size(); i += BANCOS_POR_BASURERO) {
                 float[] b = bancos.get(i); // {x, z, angulo}; el frente (-Z local) mira a la fuente.
-                int primero = Variacion.valor(celda[0], celda[1], i, SEMILLA_LADO_BANCO) < 0.5f ? 1 : -1;
                 for (int lado : new int[] {primero, -primero}) {
-                    float lx = lado * (Parque.MITAD_BANCO + SEPARACION_BANCO + RADIO); // Al costado (X local).
-                    float lz = RETIRO_BANCO; // +Z local: hacia atrás, lejos de la fuente.
-                    float coseno = (float) Math.cos(b[2]); // Misma transformación que Parque.pieza().
-                    float seno = (float) Math.sin(b[2]);
-                    float x = b[0] + coseno * lx + seno * lz;
-                    float z = b[1] - seno * lx + coseno * lz;
+                    float[] lugar = Parque.lugarBasurero(b, lado); // Al costado y RETIRO_BANCO más atrás.
+                    float x = lugar[0];
+                    float z = lugar[1];
                     if (libreEnParque(celda[0], celda[1], x, z) && libre(x, z, lista)) {
                         lista.add(new float[] {x, Parque.TOPE_CESPED, z, EN_PARQUE});
                         break; // Un basurero por banco.
@@ -169,19 +176,15 @@ public class Basureros {
 
     // ==================== 3. REGLAS DE DISTANCIA ====================
 
-    /** En un parque: sobre el césped, fuera de los senderos y de la fuente, y sin tocar ningún banco. */
+    /** En un parque: sobre el césped, fuera del pavimento (senderos, plaza y franjas) y sin tocar ningún banco. */
     static boolean libreEnParque(int fila, int columna, float x, float z) {
         float rx = Math.abs(x - Mapa.centro(columna)); // Distancia al centro del parque en X.
         float rz = Math.abs(z - Mapa.centro(fila)); // Y en Z.
-        float mitadSendero = Parque.ANCHO_SENDERO / 2;
         if (rx + RADIO > Parque.MITAD_CESPED || rz + RADIO > Parque.MITAD_CESPED) {
             return false; // Saldría del césped.
         }
-        if (rx < mitadSendero + RADIO || rz < mitadSendero + RADIO) {
-            return false; // Tocaría uno de los senderos en cruz.
-        }
-        if (Math.hypot(rx, rz) < Parque.RADIO_FUENTE + RADIO) {
-            return false; // Dentro de la fuente.
+        if (Parque.tocaPavimento(fila, columna, x, z, RADIO)) {
+            return false; // Tocaría el camino de los peatones (la fuente está dentro de la plaza, así que también queda excluida).
         }
         for (float[] b : Parque.bancos(fila, columna)) {
             if (Math.hypot(x - b[0], z - b[1]) < Parque.MITAD_BANCO + RADIO + MARGEN_BANCO) {

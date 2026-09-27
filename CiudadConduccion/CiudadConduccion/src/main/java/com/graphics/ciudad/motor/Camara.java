@@ -18,8 +18,9 @@ import static org.lwjgl.glfw.GLFW.*; // Permite consultar las flechas que orbita
  *    Al entrar al modo la cámara vuelve a la vista general de siempre (la de las capturas).
  * Mouse: arrastrar con el botón izquierdo = girar y elevar; ruedita = acercar y alejar; botón derecho = desplazar
  * (solo en la aérea). En la cámara de seguimiento el mouse no hace nada.
- * SEGUIMIENTO: se acerca al auto cuando el punto de detrás cae sobre una manzana o fuera de la ciudad (ver
- * distanciaLibre()), y vuelve a su distancia de a poco.
+ * SEGUIMIENTO: detrás del auto, con su ángulo suavizado, mirando a un punto por delante de él con una inclinación fija.
+ * Se acerca al auto cuando el punto de detrás cae sobre una manzana o fuera de la ciudad (ver distanciaLibre()), y
+ * vuelve a su distancia de a poco.
  * Se comunica con: Shader, al que envía uOjo, uObjetivo, uAspecto y uPlanoLejano; Juego, que le pasa la posición y
  * el ángulo del Auto y el tamaño de la Ventana en cada cuadro; Ventana, que le entrega los movimientos del mouse;
  * Mapa, para saber qué celdas son calle.
@@ -28,7 +29,7 @@ public class Camara {
 
     /** Modos de cámara, en el orden en que los recorre la tecla C. */
     public enum Modo {
-        SEGUIMIENTO, // Detrás del auto, a distancia y altura fijas.
+        SEGUIMIENTO, // Detrás del auto, con el ángulo suavizado y mirando por delante de él.
         ORBITAL, // Alrededor del auto, controlada con el mouse.
         AEREA // Vista general de toda la ciudad, controlada con el mouse.
     }
@@ -63,19 +64,44 @@ public class Camara {
     public static final float SENSIBILIDAD_DESPLAZAMIENTO = 0.0015f; // Desplazamiento por píxel, por unidad de distancia (lejos = más rápido).
 
     // ==================== CÁMARA DE SEGUIMIENTO (valores ajustables) ====================
+    // ENCUADRE: la cámara va DISTANCIA_SEGUIMIENTO detrás del auto y mira a un punto ADELANTE unidades por delante de
+    // él, a ALTURA_OBJETIVO_MIRA. Su altura sale de la inclinación: altura = ALTURA_OBJETIVO_MIRA + (d + ADELANTE) ·
+    // tan(INCLINACION), así la cámara mira siempre INCLINACION hacia abajo aunque el recorte cambie d (se acerca y baja
+    // a la vez, sin cabecear). Con 11° y el campo visual de 55° el horizonte queda en el tercio superior de la pantalla.
+    // POR QUÉ MIRAR POR DELANTE DEL AUTO: mirando al auto, este queda clavado en el centro y la mitad de la pantalla es
+    // calle que ya se recorrió. Mirando adelante, el auto baja al tercio inferior y se ve hacia dónde va; además, el
+    // punto de mira usa el ángulo REAL del auto, así que al doblar la vista se adelanta a la curva, como en los juegos.
+    // SUAVIZADO DEL ÁNGULO: la cámara no copia el ángulo del auto; lo persigue. En cada cuadro el atraso (ángulo del
+    // auto − anguloCamara) se multiplica por exp(−K_GIRO · dt). POR QUÉ NO DEPENDE DE LOS FPS: dos cuadros de dt dejan
+    // exp(−k·dt) · exp(−k·dt) = exp(−k · 2dt), lo mismo que un cuadro de 2dt; a 30, 60 o 144 FPS, en medio segundo el
+    // atraso queda multiplicado por exp(−k · 0.5). Un "atraso · 0.9 por cuadro" fijo, en cambio, se achicaría el doble
+    // de rápido a 120 FPS que a 60. Con K_GIRO = 5 el atraso se reduce a la mitad en ln 2 / 5 ≈ 0.14 s, y al doblar a
+    // fondo (≈ 101°/s) la cámara queda unos 20° atrás: se ve el costado del auto y cada toque de A/D ya no sacude la imagen.
     // RECORTE: la cámara va DISTANCIA_SEGUIMIENTO detrás del auto, pero si ese punto cae sobre una manzana (al doblar,
     // el "detrás" apunta en diagonal hacia un edificio) o fuera de ±(límite − MARGEN_BORDE_CAMARA), se acerca al auto.
     // distanciaLibre() camina desde el auto hacia atrás en pasos de PASO_RECORTE y se queda con el último punto que
     // sigue sobre calle: así el ojo y toda la línea que lo une con el auto quedan sobre la calle, sin atravesar edificios.
+    // El rayo se traza hacia atrás desde anguloCamara (el ángulo suavizado), que es donde está la cámara de verdad.
+    // BÚSQUEDA BINARIA: si la distancia solo pudiera valer múltiplos de PASO_RECORTE, al retroceder hacia un obstáculo
+    // quedaría fija mientras el auto avanza 0.25 hacia él y después saltaría 0.25 de golpe. El ojo iría para atrás con
+    // el auto y volvería para adelante unas 24 veces por segundo (6 u/s ÷ 0.25): el temblor en reversa. Por eso, al
+    // encontrar el primer punto tapado, se parte ITERACIONES_RECORTE veces al medio el tramo entre el último libre y ese:
+    // 10 mitades dejan un error de 0.25 / 2¹⁰ ≈ 0.0002. Así la distancia es continua y, retrocediendo, el ojo queda
+    // quieto frente al obstáculo mientras el auto se le acerca, bajando de a poco.
     // SUAVIZADO: acercarse es inmediato (la cámara nunca entra a un edificio); alejarse, en cambio, se hace a
     // VELOCIDAD_ALEJAMIENTO para que no salte al salir de la curva. En una calle recta no hay recorte y la distancia es
     // siempre DISTANCIA_SEGUIMIENTO: se ve igual que sin recorte, sin quedar atrasada.
-    public static final float DISTANCIA_SEGUIMIENTO = 12; // Distancia horizontal de la cámara de seguimiento detrás del auto.
-    public static final float ALTURA_SEGUIMIENTO = 9; // Altura de la cámara de seguimiento sobre el suelo.
-    private static final float ALTURA_OBJETIVO = 0.8f; // Altura del punto del auto al que mira la cámara (la carrocería).
+    public static final float DISTANCIA_SEGUIMIENTO = 8; // Distancia horizontal de la cámara detrás del auto ("acercá la cámara").
+    public static final float ADELANTE = 4; // Cuánto por delante del auto está el punto al que mira.
+    public static final float ALTURA_OBJETIVO_MIRA = 1.2f; // Altura de ese punto: un poco sobre el techo del auto.
+    public static final float INCLINACION = (float) Math.toRadians(11); // Cuánto mira hacia abajo ("que mire más arriba": bajarla).
+    public static final float ALTURA_MINIMA_SEGUIMIENTO = 2; // Nunca más baja que esto, aunque se achique la inclinación.
+    public static final float K_GIRO = 5; // Rapidez (1/s) con que la cámara alcanza el ángulo del auto: más = más rígida.
+    private static final float ALTURA_OBJETIVO = 0.8f; // Altura del punto del auto al que mira la cámara orbital (la carrocería).
     public static final float DISTANCIA_SEGUIMIENTO_MIN = 1.5f; // Nunca más cerca: con 0 la cámara miraría justo hacia abajo.
     public static final float MARGEN_BORDE_CAMARA = 1; // La cámara queda al menos esto adentro del borde de la ciudad.
-    public static final float PASO_RECORTE = 0.25f; // Resolución de la búsqueda del punto libre, en unidades.
+    public static final float PASO_RECORTE = 0.25f; // Paso grueso de la búsqueda del punto libre, en unidades.
+    public static final int ITERACIONES_RECORTE = 10; // Mitades de la búsqueda binaria dentro del último paso.
     public static final float VELOCIDAD_ALEJAMIENTO = 12; // Unidades por segundo con que la cámara recupera su distancia.
 
     // ==================== PLANO LEJANO (valores ajustables) ====================
@@ -94,6 +120,8 @@ public class Camara {
     private float centroX = 0; // Punto de la ciudad que mira la cámara aérea, en X.
     private float centroZ = 0; // Y en Z.
     private float distanciaSeguimiento = DISTANCIA_SEGUIMIENTO; // Distancia actual detrás del auto (suavizada).
+    private float anguloCamara = 0; // Ángulo desde el que mira la cámara de seguimiento: persigue al del auto.
+    private boolean reiniciarSeguimiento = true; // El próximo actualizarSeguimiento() se coloca detrás del auto sin barrido.
     private final float[] ojo = new float[3]; // Última posición de la cámara enviada al shader: Cielo centra su cúpula ahí.
 
     /** Recibe la distancia del centro a cada borde (Mapa.LIMITE) y ajusta la vista aérea a ese tamaño. */
@@ -115,6 +143,9 @@ public class Camara {
         modo = Modo.values()[(modo.ordinal() + 1) % Modo.values().length]; // Avanza en el orden del enum y vuelve al inicio.
         if (modo == Modo.AEREA) { // Al entrar a la aérea...
             reiniciarAerea(); // ...arranca con la vista general de siempre.
+        }
+        if (modo == Modo.SEGUIMIENTO) { // Al volver al seguimiento...
+            reiniciarSeguimiento = true; // ...arranca justo detrás del auto (acá no se conoce su posición).
         }
     }
 
@@ -235,13 +266,19 @@ public class Camara {
     float distanciaLibre(float autoX, float autoZ, float angulo) {
         float atrasX = (float) Math.sin(angulo); // Dirección hacia atrás, en X.
         float atrasZ = (float) Math.cos(angulo); // Y en Z.
-        float borde = limite - MARGEN_BORDE_CAMARA; // La cámara no pasa de acá.
         float libre = 0; // Último punto libre encontrado.
         for (float d = PASO_RECORTE; d <= DISTANCIA_SEGUIMIENTO + 1e-4f; d += PASO_RECORTE) { // Camina desde el auto hacia atrás.
-            float x = autoX + atrasX * d; // Punto candidato.
-            float z = autoZ + atrasZ * d;
-            boolean adentro = Math.abs(x) <= borde && Math.abs(z) <= borde; // Dentro de la ciudad, con margen.
-            if (!adentro || !Mapa.esCalleEn(x, z)) { // Fuera del mapa o sobre una manzana.
+            if (!puntoLibre(autoX + atrasX * d, autoZ + atrasZ * d)) { // Fuera del mapa o sobre una manzana.
+                // El obstáculo empieza en algún lugar entre libre y d: se lo busca partiendo el tramo al medio.
+                float tapado = d; // Primer punto tapado.
+                for (int i = 0; i < ITERACIONES_RECORTE; i++) {
+                    float medio = (libre + tapado) / 2; // Mitad del tramo que falta decidir.
+                    if (puntoLibre(autoX + atrasX * medio, autoZ + atrasZ * medio)) {
+                        libre = medio; // El obstáculo está más atrás.
+                    } else {
+                        tapado = medio; // El obstáculo está más cerca.
+                    }
+                }
                 break; // Lo que sigue queda tapado: la cámara se detiene en el último punto libre.
             }
             libre = d; // Este punto sirve.
@@ -249,9 +286,25 @@ public class Camara {
         return Math.max(DISTANCIA_SEGUIMIENTO_MIN, Math.min(libre, DISTANCIA_SEGUIMIENTO)); // Nunca pegada al auto ni más lejos que la normal.
     }
 
-    /** Actualiza la distancia suavizada: se acerca de golpe si hace falta y se aleja a VELOCIDAD_ALEJAMIENTO. */
+    /** Indica si la cámara puede estar sobre (x, z): dentro de ±(límite − MARGEN_BORDE_CAMARA) y sobre la calle. */
+    private boolean puntoLibre(float x, float z) {
+        float borde = limite - MARGEN_BORDE_CAMARA; // La cámara no pasa de acá.
+        return Math.abs(x) <= borde && Math.abs(z) <= borde && Mapa.esCalleEn(x, z);
+    }
+
+    /**
+     * Cada cuadro: el ángulo de la cámara persigue al del auto (atraso · exp(−K_GIRO · dt)) y la distancia se recorta
+     * trazando el rayo desde ese ángulo suavizado, que es donde está la cámara de verdad. Acercarse es inmediato;
+     * alejarse, a VELOCIDAD_ALEJAMIENTO. Después de reiniciarSeguimiento() o de volver con C, se coloca sin barrido.
+     */
     public void actualizarSeguimiento(float deltaTime, float autoX, float autoZ, float angulo) {
-        float libre = distanciaLibre(autoX, autoZ, angulo); // Hasta dónde se puede alejar ahora.
+        if (reiniciarSeguimiento) { // Pedido pendiente (C, o el primer cuadro): justo detrás del auto.
+            reiniciarSeguimiento(autoX, autoZ, angulo);
+            return;
+        }
+        float atraso = diferenciaAngular(angulo, anguloCamara); // Cuánto le falta girar a la cámara, en (−π, π].
+        anguloCamara = angulo - atraso * (float) Math.exp(-K_GIRO * deltaTime); // El atraso se achica igual a cualquier FPS.
+        float libre = distanciaLibre(autoX, autoZ, anguloCamara); // Hasta dónde se puede alejar ahora.
         if (libre <= distanciaSeguimiento) { // Hay algo más cerca que la cámara actual.
             distanciaSeguimiento = libre; // Se acerca de inmediato: nunca queda dentro de un edificio.
         } else { // Hay más espacio: vuelve de a poco.
@@ -259,17 +312,53 @@ public class Camara {
         }
     }
 
+    /** Coloca la cámara de seguimiento justo detrás del auto, sin atraso ni barrido; Juego lo llama al presionar R. */
+    public void reiniciarSeguimiento(float autoX, float autoZ, float angulo) {
+        anguloCamara = angulo; // Mira desde atrás del auto, ya alineada.
+        distanciaSeguimiento = distanciaLibre(autoX, autoZ, angulo); // Toda la distancia libre, sin volver de a poco.
+        reiniciarSeguimiento = false; // Pedido atendido.
+    }
+
+    /** Diferencia a − b llevada a (−π, π]: el camino corto para girar de b hasta a. */
+    static float diferenciaAngular(float a, float b) {
+        double diferencia = (a - b) % (2 * Math.PI); // Entre −2π y 2π (el resto conserva el signo de a − b).
+        if (diferencia > Math.PI) { // Más de media vuelta a la izquierda: es más corto por la derecha.
+            diferencia -= 2 * Math.PI;
+        } else if (diferencia <= -Math.PI) { // Y al revés.
+            diferencia += 2 * Math.PI;
+        }
+        return (float) diferencia;
+    }
+
     /** Distancia actual de la cámara de seguimiento detrás del auto. */
     public float getDistanciaSeguimiento() {
         return distanciaSeguimiento;
     }
 
+    /** Ángulo suavizado de la cámara de seguimiento, en radianes (el del auto, con atraso). */
+    public float getAnguloCamara() {
+        return anguloCamara;
+    }
+
+    /** Altura de la cámara para mirar INCLINACION hacia abajo al punto que está ADELANTE del auto, a d detrás de él. */
+    static float alturaSeguimiento(float d) {
+        float alcance = d + ADELANTE; // Distancia horizontal de la cámara al punto de mira.
+        return Math.max(ALTURA_MINIMA_SEGUIMIENTO, ALTURA_OBJETIVO_MIRA + alcance * (float) Math.tan(INCLINACION));
+    }
+
     /** Posición {x, y, z} de la cámara de seguimiento: la misma que configurar() envía al shader. */
-    float[] ojoSeguimiento(float autoX, float autoZ, float angulo) {
-        float d = Math.min(distanciaSeguimiento, distanciaLibre(autoX, autoZ, angulo)); // Por si el auto se movió sin actualizar (R).
-        float x = autoX + (float) Math.sin(angulo) * d; // Detrás del auto en X.
-        float z = autoZ + (float) Math.cos(angulo) * d; // Detrás del auto en Z.
-        return new float[] {x, ALTURA_SEGUIMIENTO, z};
+    float[] ojoSeguimiento(float autoX, float autoZ) {
+        float d = Math.min(distanciaSeguimiento, distanciaLibre(autoX, autoZ, anguloCamara)); // Por si el auto se movió sin actualizar.
+        float x = autoX + (float) Math.sin(anguloCamara) * d; // Detrás del auto (según la cámara) en X.
+        float z = autoZ + (float) Math.cos(anguloCamara) * d; // Y en Z.
+        return new float[] {x, alturaSeguimiento(d), z}; // Más cerca = más baja: la inclinación no cambia.
+    }
+
+    /** Punto {x, y, z} que mira la cámara de seguimiento: ADELANTE del auto según su ángulo real, a ALTURA_OBJETIVO_MIRA. */
+    static float[] objetivoSeguimiento(float autoX, float autoZ, float angulo) {
+        float x = autoX - (float) Math.sin(angulo) * ADELANTE; // El frente del auto es (−sen, −cos).
+        float z = autoZ - (float) Math.cos(angulo) * ADELANTE;
+        return new float[] {x, ALTURA_OBJETIVO_MIRA, z};
     }
 
     /** Centro de la cámara aérea en X. */
@@ -324,7 +413,8 @@ public class Camara {
             enviar(shader, orbitaAuto.ojo(autoX, ALTURA_OBJETIVO, autoZ, angulo), autoX, ALTURA_OBJETIVO, autoZ, ancho, alto);
             return; // No sigue con la cámara de seguimiento.
         }
-        enviar(shader, ojoSeguimiento(autoX, autoZ, angulo), autoX, ALTURA_OBJETIVO, autoZ, ancho, alto); // Hasta 12 detrás y a 9 de altura, mirando la carrocería.
+        float[] objetivo = objetivoSeguimiento(autoX, autoZ, angulo); // Por delante del auto.
+        enviar(shader, ojoSeguimiento(autoX, autoZ), objetivo[0], objetivo[1], objetivo[2], ancho, alto); // Hasta 8 detrás, mirando 11° hacia abajo.
     }
 
     /** Posición de la cámara calculada en el último configurar() (copia); Cielo centra la cúpula en ella. */

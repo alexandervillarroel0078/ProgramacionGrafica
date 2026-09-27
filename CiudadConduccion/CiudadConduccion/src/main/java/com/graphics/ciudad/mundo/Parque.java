@@ -11,8 +11,13 @@ import java.util.List; // Tipo de esas listas.
 /**
  * PARQUE: contenido de una celda de parque.
  * Responsable de: calcular (una vez, sin azar por cuadro) dónde van los árboles y los bancos de cada parque, y dibujar
- * senderos en cruz, una fuente central, 4 a 6 árboles (frondosos y pinos), 2 a 4 bancos que miran a la fuente y 1 o 2
+ * senderos en cruz, una plaza octogonal alrededor de la fuente central, franjas de acceso donde llegan los pasos
+ * peatonales, 4 a 6 árboles (frondosos y pinos), 2 a 4 bancos que miran a la fuente desde el borde de la plaza y 1 o 2
  * luminarias peatonales tipo GLOBO en el borde de los senderos (luces puntuales: ver luminarias()).
+ * RECORRIDO PEATONAL (ver sección 3a): senderos, plaza y franjas forman un solo PAVIMENTO conectado. Un peatón que
+ * cruza la calle por un paso pisa una franja, sigue por ella hasta un brazo de la cruz, llega a la plaza y la rodea
+ * hasta cualquier otro brazo sin pisar césped. Nada se apoya sobre la plaza ni las franjas: árboles, bancos,
+ * luminarias y basureros quedan afuera (las luminarias van en el borde de los brazos, como antes).
  * VARIACIÓN DETERMINÍSTICA: cada parque usa su fila y columna para "sortear" disposición, tipo de árbol, altura, tamaño
  * de copa y tono de verde con variacion(), una función que siempre da el mismo número para los mismos datos. Así los
  * parques son distintos entre sí, pero cada uno se ve igual en todos los cuadros y en cada ejecución.
@@ -40,7 +45,6 @@ public class Parque {
     public static final int ARBOLES_MAX = 6; // Mayor cantidad de árboles por parque.
     public static final int BANCOS_MIN = 2; // Menor cantidad de bancos por parque.
     public static final int BANCOS_MAX = 4; // Mayor cantidad de bancos por parque.
-    public static final float DISTANCIA_BANCO = 2.3f; // Distancia del centro a cada banco, entre dos senderos.
     // Árboles altos: la copa (de 2 a 7 de altura) está a la altura de semáforos, PARE, carteles y farolas. Un árbol se
     // planta solo si su copa más ancha posible (COPA_MAXIMA / 2) queda a MARGEN_POSTES de la mitad de cada señal.
     public static final float MARGEN_POSTES = 0.2f; // Aire entre el borde de la copa y la señal más cercana.
@@ -71,6 +75,30 @@ public class Parque {
     // copa por encima del tronco: la altura total es alturaTronco + altoCopa.
     public static final int ALTO_COPA = 7; // Índice de altoCopa en el arreglo.
     public static final float MITAD_BANCO = 0.8f; // Medio largo del banco (mide 1.6): radio del círculo que lo contiene.
+    public static final float MITAD_FONDO_BANCO = 0.25f; // Medio fondo del asiento (mide 0.5): del centro del banco a su frente.
+    public static final float FONDO_RESPALDO = 0.28f; // Del centro del banco a la cara de atrás del respaldo (0.24 + 0.08 / 2).
+
+    // ---- Recorrido peatonal: plaza y franjas de acceso (valores ajustables) ----
+    // PLAZA: octógono pavimentado alrededor de la fuente, a la altura del sendero. Es la unión de dos cuadrados iguales,
+    // uno recto y otro girado 45°: juntos forman un octógono regular cuya APOTEMA (distancia del centro a cada lado) es
+    // MITAD_PLAZA. Entre la fuente y cualquier lado queda al menos PASO_FUENTE para caminar, así que los cuatro brazos se
+    // conectan rodeando la fuente sin pisar césped. Es octógono y no círculo porque el cilindro de Figuras tiene solo
+    // 10 lados (un círculo "de verdad" no saldría); con cajas el octógono sale exacto, y sus lados diagonales quedan
+    // paralelos al frente de los bancos.
+    public static final float PASO_FUENTE = 1.0f; // Ancho mínimo del anillo pavimentado entre la fuente y el césped.
+    public static final float MITAD_PLAZA = RADIO_FUENTE + PASO_FUENTE; // Apotema del octógono: 1.2 + 1.0 = 2.2.
+    // FRANJA DE ACCESO: cada paso peatonal llega al borde del parque a 3 del eje del brazo más cercano (el paso está
+    // pegado a su cruce, el brazo en el medio de la cuadra). La franja pavimenta el pie de ese borde, desde el brazo
+    // hasta el final del paso, con PROFUNDIDAD_FRANJA hacia adentro: el peatón baja del paso y camina sobre pavimento
+    // hasta el sendero. Se calculan desde Decoracion.UBICACIONES_PASOS, así que siguen solas al Mapa (ver franjas()).
+    public static final float PROFUNDIDAD_FRANJA = 0.9f; // Del borde del césped hacia adentro; los troncos de borde quedan a 3.47 del centro, antes de 3.6.
+    // BANCOS: miran a la fuente desde el borde de la plaza, sobre el césped. DISTANCIA_BANCO se deduce de la plaza: las
+    // esquinas delanteras del banco (a MITAD_BANCO del centro del frente, a lo largo del lado diagonal) quedan
+    // MARGEN_BANCO_PLAZA afuera de los lados rectos del octógono. En un punto a 45°, x = distancia / √2; despejando:
+    // √2 · (MITAD_PLAZA + margen) = (distancia − MITAD_FONDO_BANCO) + MITAD_BANCO.
+    public static final float MARGEN_BANCO_PLAZA = 0.05f; // Aire entre el banco y el borde de la plaza.
+    public static final float DISTANCIA_BANCO =
+        (float) Math.sqrt(2) * (MITAD_PLAZA + MARGEN_BANCO_PLAZA) - MITAD_BANCO + MITAD_FONDO_BANCO; // ≈ 2.63 del centro.
 
     // ---- Luminarias peatonales tipo GLOBO (valores ajustables) ----
     // Poste bajo con una esfera lechosa arriba, a escala de peatón: más baja y más simple que la farola de calle.
@@ -135,9 +163,37 @@ public class Parque {
             int tipo = variacion(fila, columna, i, 4) < proporcionPinos ? PINO : FRONDOSO; // Mezcla de tipos.
             float verde = variacion(fila, columna, i, 7); // Tono de verde (0 = claro, 1 = oscuro).
             float giro = (float) (2 * Math.PI * variacion(fila, columna, i, 8)); // Orientación de la copa: rompe la simetría.
-            lista.add(arbol(x, z, tipo, variacion(fila, columna, i, 5), variacion(fila, columna, i, 6), verde, giro)); // Guarda el árbol.
+            float vAltura = variacion(fila, columna, i, 5); // Altura dentro del rango del tipo.
+            float vCopa = variacion(fila, columna, i, 6); // Ancho de la copa.
+            float[] arbol = arbol(x, z, tipo, vAltura, vCopa, verde, giro);
+            if (tipo == PINO && pinoEstorba(fila, columna, arbol)) { // Ramas bajas sobre el pavimento o sobre un basurero.
+                arbol = arbol(x, z, FRONDOSO, vAltura, vCopa, verde, giro); // Mismo lugar, pero con la copa arriba de 2.
+            }
+            lista.add(arbol); // Guarda el árbol.
         }
         return lista; // Árboles del parque.
+    }
+
+    /**
+     * Indica si un PINO en ese lugar molestaría al peatón. El pino tiene ramas casi hasta el suelo (su copa empieza a
+     * 1-1.2 de altura), así que su copa cuenta como ocupada a la altura de una persona: no puede quedar encima de un
+     * sendero, la plaza o una franja, ni encima del lugar del basurero de un banco. En esos casos el árbol pasa a ser
+     * FRONDOSO, cuya copa empieza por encima de 2 (una persona pasa por debajo). No se saltea el lugar: así la cantidad de
+     * árboles no cambia.
+     */
+    private static boolean pinoEstorba(int fila, int columna, float[] pino) {
+        float radioCopa = pino[4] / 2; // El cono de abajo es el más ancho.
+        if (tocaPavimento(fila, columna, pino[0], pino[1], radioCopa)) {
+            return true; // Ramas sobre el camino.
+        }
+        int lado = ladoBasureros(fila, columna); // Mismo lado que usará Basureros.
+        for (float[] banco : bancos(fila, columna)) {
+            float[] cesto = lugarBasurero(banco, lado);
+            if (Math.hypot(pino[0] - cesto[0], pino[1] - cesto[1]) < radioCopa + Basureros.RADIO) {
+                return true; // El basurero quedaría bajo las ramas (Basureros lo descartaría).
+            }
+        }
+        return false;
     }
 
     /**
@@ -185,7 +241,8 @@ public class Parque {
 
     /**
      * Bancos de un parque: cada uno es {x, z, angulo}. Van en las diagonales, entre dos senderos, a DISTANCIA_BANCO del
-     * centro, y miran hacia la fuente: el frente (-Z local) apunta al centro, con ángulo atan2(dx, dz) (convención de Auto).
+     * centro: sobre el césped, con el frente paralelo al lado diagonal de la plaza y apenas afuera de ella. Miran hacia
+     * la fuente: el frente (-Z local) apunta al centro, con ángulo atan2(dx, dz) (convención de Auto).
      */
     public static List<float[]> bancos(int fila, int columna) {
         List<float[]> lista = new ArrayList<>(); // Resultado.
@@ -199,6 +256,140 @@ public class Parque {
             lista.add(new float[] {Mapa.centro(columna) + rel[0], Mapa.centro(fila) + rel[1], angulo}); // Guarda el banco.
         }
         return lista; // Bancos del parque.
+    }
+
+    /**
+     * Costado del banco (1 o -1, en X local) donde va su basurero. Se sortea UNA VEZ POR PARQUE, no por banco: como la X
+     * local gira con cada banco, todos los basureros quedan "girados" en el mismo sentido alrededor de la fuente y cada
+     * uno junto a un brazo distinto. Si se sorteara por banco, dos bancos vecinos podrían elegir el mismo brazo y sus
+     * cestos quedarían a menos de Basureros.DISTANCIA_MIN_ENTRE_BASUREROS: uno de los dos bancos se quedaría sin cesto.
+     */
+    public static int ladoBasureros(int fila, int columna) {
+        return variacion(fila, columna, 0, Basureros.SEMILLA_LADO_BANCO) < 0.5f ? 1 : -1;
+    }
+
+    /**
+     * Lugar {x, z} del basurero de un banco {x, z, angulo}, del costado "lado": al lado de la punta del banco
+     * (MITAD_BANCO + SEPARACION_BANCO + radio del cesto) y RETIRO_BANCO más atrás, lejos de la fuente. Usa la misma
+     * transformación que pieza(). Lo usan Basureros (para ubicarlo), arboles() y luminarias() (para dejarle lugar).
+     * Solo lee CONSTANTES de Basureros (se copian al compilar), así que no dispara su inicialización antes de tiempo.
+     */
+    public static float[] lugarBasurero(float[] banco, int lado) {
+        float lx = lado * (MITAD_BANCO + Basureros.SEPARACION_BANCO + Basureros.RADIO); // Al costado (X local).
+        float lz = Basureros.RETIRO_BANCO; // +Z local: hacia atrás.
+        float coseno = (float) Math.cos(banco[2]);
+        float seno = (float) Math.sin(banco[2]);
+        return new float[] {banco[0] + coseno * lx + seno * lz, banco[1] - seno * lx + coseno * lz};
+    }
+
+    // ==================== 3a. RECORRIDO PEATONAL: SENDEROS, PLAZA Y FRANJAS ====================
+    // Todo lo pavimentado del parque está a la misma altura (el tope del sendero) y se toca entre sí, así que forma un
+    // solo camino. Estas funciones responden "¿este punto (o este círculo) está sobre el pavimento?"; las usan árboles,
+    // luminarias, Basureros y las pruebas, para que nada quede apoyado sobre el camino.
+
+    /**
+     * "Radio octogonal" de un punto relativo al centro del parque: el mayor entre |x|, |z| y (|x| + |z|) / √2. Vale
+     * MITAD_PLAZA sobre todo el borde de la plaza: los dos primeros términos son el cuadrado recto y el tercero, el
+     * cuadrado girado 45° (la distancia a una recta diagonal es (|x| + |z|) / √2). Si es menor, el punto está adentro.
+     */
+    public static float radioOctogonal(float rx, float rz) {
+        float ax = Math.abs(rx);
+        float az = Math.abs(rz);
+        return Math.max(Math.max(ax, az), (ax + az) / (float) Math.sqrt(2));
+    }
+
+    /**
+     * Indica si un círculo de centro (x, z) y ese radio toca la plaza. Agranda cada lado del octógono en "radio": en los
+     * vértices es un poco más estricto que el círculo real (lo deja un poco más lejos), nunca menos.
+     */
+    public static boolean tocaPlaza(int fila, int columna, float x, float z, float radio) {
+        return radioOctogonal(x - Mapa.centro(columna), z - Mapa.centro(fila)) <= MITAD_PLAZA + radio;
+    }
+
+    /** Indica si un círculo toca uno de los dos senderos de la cruz (rectángulos de ANCHO_SENDERO × todo el césped). */
+    public static boolean tocaSendero(int fila, int columna, float x, float z, float radio) {
+        float cx = Mapa.centro(columna);
+        float cz = Mapa.centro(fila);
+        float a = ANCHO_SENDERO / 2;
+        float m = MITAD_CESPED;
+        return tocaRectangulo(x, z, radio, cx - a, cx + a, cz - m, cz + m) // Sendero norte-sur.
+            || tocaRectangulo(x, z, radio, cx - m, cx + m, cz - a, cz + a); // Sendero oeste-este.
+    }
+
+    /** Indica si un círculo toca alguna franja de acceso del parque. */
+    public static boolean tocaFranja(int fila, int columna, float x, float z, float radio) {
+        for (float[] f : franjas(fila, columna)) {
+            if (tocaRectangulo(x, z, radio, f[0], f[1], f[2], f[3])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Indica si un círculo toca cualquier parte del pavimento: senderos, plaza o franjas. */
+    public static boolean tocaPavimento(int fila, int columna, float x, float z, float radio) {
+        return tocaSendero(fila, columna, x, z, radio) || tocaPlaza(fila, columna, x, z, radio)
+            || tocaFranja(fila, columna, x, z, radio);
+    }
+
+    /** Indica si el punto (x, z) está sobre el pavimento (un círculo de radio 0, con el borde incluido). */
+    public static boolean enPavimento(int fila, int columna, float x, float z) {
+        return tocaPavimento(fila, columna, x, z, 0);
+    }
+
+    /**
+     * Indica si un círculo toca el rectángulo {xMin..xMax, zMin..zMax}: dx y dz son lo que le falta al centro para
+     * entrar al rectángulo en cada eje (0 si ya está dentro de ese intervalo). Con radio 0 cuenta el borde como adentro.
+     */
+    private static boolean tocaRectangulo(float x, float z, float radio, float xMin, float xMax, float zMin, float zMax) {
+        float dx = Math.max(0, Math.max(xMin - x, x - xMax));
+        float dz = Math.max(0, Math.max(zMin - z, z - zMax));
+        return dx * dx + dz * dz <= radio * radio;
+    }
+
+    /**
+     * Franjas de acceso de un parque, cada una {xMin, xMax, zMin, zMax} en coordenadas del mundo. Por cada paso peatonal
+     * de Decoracion.UBICACIONES_PASOS que desemboca en un borde del parque:
+     *  - el paso está en la celda de calle vecina: al norte o al sur si la calle va de oeste a este (ejeX), al oeste
+     *    o al este si va de norte a sur;
+     *  - "desvio" es cuánto se corre el paso, a lo largo del borde, respecto del eje del brazo (±3 con este diseño);
+     *  - la franja va desde el eje del brazo (0) hasta el extremo lejano del paso, recortada al césped, y ocupa
+     *    PROFUNDIDAD_FRANJA desde el borde hacia adentro. Así contiene toda la boca del paso y se une con el brazo.
+     * Con 13 × 13 (u otro mapa) los pasos cambian y las franjas los siguen solas.
+     */
+    public static List<float[]> franjas(int fila, int columna) {
+        List<float[]> lista = new ArrayList<>();
+        float cx = Mapa.centro(columna);
+        float cz = Mapa.centro(fila);
+        float m = MITAD_CESPED;
+        for (float[] paso : Decoracion.UBICACIONES_PASOS) { // {x, z, ejeX}.
+            boolean ejeX = paso[2] == 1; // La calle va de oeste a este: el paso llega al borde norte o sur.
+            int filaPaso = Mapa.indiceCelda(paso[1]);
+            int columnaPaso = Mapa.indiceCelda(paso[0]);
+            int lado; // -1: borde norte u oeste; 1: borde sur o este.
+            float desvio; // Del eje del brazo al centro del paso, a lo largo del borde.
+            if (ejeX && columnaPaso == columna && Math.abs(filaPaso - fila) == 1) {
+                lado = filaPaso - fila;
+                desvio = paso[0] - cx;
+            } else if (!ejeX && filaPaso == fila && Math.abs(columnaPaso - columna) == 1) {
+                lado = columnaPaso - columna;
+                desvio = paso[1] - cz;
+            } else {
+                continue; // Este paso no llega a este parque.
+            }
+            float desde = Math.max(-m, Math.min(0, desvio - Decoracion.LARGO_PASO / 2)); // A lo largo del borde.
+            float hasta = Math.min(m, Math.max(0, desvio + Decoracion.LARGO_PASO / 2));
+            float borde = lado * m; // Borde del césped, de través.
+            float adentro = lado * (m - PROFUNDIDAD_FRANJA); // Límite interior de la franja.
+            float tMin = Math.min(borde, adentro);
+            float tMax = Math.max(borde, adentro);
+            if (ejeX) { // Borde norte o sur: la franja es larga en X.
+                lista.add(new float[] {cx + desde, cx + hasta, cz + tMin, cz + tMax});
+            } else { // Borde oeste o este: larga en Z.
+                lista.add(new float[] {cx + tMin, cx + tMax, cz + desde, cz + hasta});
+            }
+        }
+        return lista;
     }
 
     // ==================== 3b. LUMINARIAS GLOBO ====================
@@ -220,6 +411,8 @@ public class Parque {
      *  - SIN CHOCAR CON ÁRBOLES: el globo está a la altura de las copas, así que se mide contra la copa real de cada árbol;
      *  - SIN CHOCAR CON BANCOS: la base queda fuera del círculo que contiene al banco;
      *  - LEJOS DE LOS POSTES de la acera (semáforos, PARE, carteles y farolas de calle);
+     *  - FUERA DE LA PLAZA Y DE LAS FRANJAS: ahí camina la gente que rodea la fuente o baja de un paso;
+     *  - SIN QUITARLE EL LUGAR A UN BASURERO (lugarBasurero()), con la misma distancia que exige Basureros;
      *  - REPARTIDAS: la primera es la primera candidata válida desde un punto de partida propio del parque (variacion());
      *    la segunda, la válida MÁS LEJANA a la primera (suele quedar en el brazo opuesto). Sin azar: siempre igual.
      */
@@ -240,7 +433,7 @@ public class Parque {
             // Perpendicular al brazo: (-z, x). Se suma el desvío hacia un costado del sendero.
             float x = cx + brazo[0] * distancia - brazo[1] * lado * DESVIO_LUMINARIA;
             float z = cz + brazo[1] * distancia + brazo[0] * lado * DESVIO_LUMINARIA;
-            if (luminariaLibre(x, z, arboles, bancos)) {
+            if (luminariaLibre(fila, columna, x, z, arboles, bancos)) {
                 validas.add(new float[] {x, z});
             }
         }
@@ -263,8 +456,19 @@ public class Parque {
         return elegidas; // Luminarias del parque.
     }
 
-    /** Aplica las reglas de choque de luminarias(): árboles, bancos y postes de la acera. */
-    private static boolean luminariaLibre(float x, float z, List<float[]> arboles, List<float[]> bancos) {
+    /** Aplica las reglas de choque de luminarias(): plaza, franjas, árboles, bancos, basureros y postes de la acera. */
+    private static boolean luminariaLibre(int fila, int columna, float x, float z, List<float[]> arboles, List<float[]> bancos) {
+        float radioBase = ANCHO_BASE_GLOBO / 2; // Lo que la luminaria ocupa en el piso.
+        if (tocaPlaza(fila, columna, x, z, radioBase) || tocaFranja(fila, columna, x, z, radioBase)) {
+            return false; // Estorbaría el paso alrededor de la fuente o a la salida de un paso peatonal.
+        }
+        int lado = ladoBasureros(fila, columna);
+        for (float[] b : bancos) { // Deja libre el lugar del basurero de cada banco (misma regla que Basureros.libre()).
+            float[] cesto = lugarBasurero(b, lado);
+            if (Math.hypot(x - cesto[0], z - cesto[1]) < radioBase + Basureros.RADIO + Basureros.MARGEN_LUMINARIA) {
+                return false;
+            }
+        }
         for (float[] a : arboles) { // El globo (a 3 de altura) está entre las copas: se mide contra la copa real.
             if (Math.hypot(x - a[0], z - a[1]) < a[4] / 2 + DIAMETRO_GLOBO / 2 + MARGEN_LUMINARIA) {
                 return false;
@@ -297,6 +501,7 @@ public class Parque {
     private final List<List<float[]>> arbolesPorParque = new ArrayList<>(); // Disposiciones calculadas una vez.
     private final List<List<float[]>> bancosPorParque = new ArrayList<>(); // Bancos calculados una vez.
     private final List<List<float[]>> luminariasDeCadaParque = new ArrayList<>(); // Luminarias globo calculadas una vez.
+    private final List<List<float[]>> franjasPorParque = new ArrayList<>(); // Franjas de acceso calculadas una vez.
     private final List<int[]> celdas = Mapa.parques(); // Parques del mapa, en el mismo orden que las listas anteriores.
 
     /** Calcula la disposición de todos los parques una sola vez (no hay azar por cuadro). */
@@ -308,15 +513,16 @@ public class Parque {
             arbolesPorParque.add(arboles(celda[0], celda[1])); // Árboles de este parque.
             bancosPorParque.add(bancos(celda[0], celda[1])); // Bancos de este parque.
             luminariasDeCadaParque.add(luminarias(celda[0], celda[1])); // Luminarias globo de este parque.
+            franjasPorParque.add(franjas(celda[0], celda[1])); // Franjas donde llegan los pasos peatonales.
         }
     }
 
-    /** Dibuja el parque de la celda (fila, columna): senderos, fuente, árboles, bancos y luminarias. */
+    /** Dibuja el parque de la celda (fila, columna): pavimento, fuente, árboles, bancos y luminarias. */
     public void dibujar(int fila, int columna, boolean noche) {
         int indice = indiceDe(fila, columna); // Posición del parque en las listas calculadas.
         float x = Mapa.centro(columna); // Centro del parque en X.
         float z = Mapa.centro(fila); // Centro del parque en Z.
-        dibujarSenderos(x, z); // Cruz de caminos.
+        dibujarPavimento(x, z, franjasPorParque.get(indice)); // Cruz de senderos, plaza y franjas de acceso.
         dibujarFuente(x, z, noche); // Fuente en el centro.
         for (float[] arbol : arbolesPorParque.get(indice)) { // Árboles propios del parque.
             dibujarArbol(figuras, arbol, TOPE_CESPED); // Pino o frondoso, apoyado sobre el césped.
@@ -358,12 +564,23 @@ public class Parque {
         throw new IllegalArgumentException("No hay parque en " + fila + "," + columna); // Decoracion solo llama con parques.
     }
 
-    /** Dos senderos beige en cruz que unen los cuatro lados del parque con el centro. */
-    private void dibujarSenderos(float x, float z) {
+    /**
+     * Pavimento beige del parque, todo a la misma altura: dos senderos en cruz que unen los cuatro lados con el centro,
+     * la plaza octogonal alrededor de la fuente (un cuadrado recto más uno girado 45°) y las franjas de acceso. Las
+     * piezas se superponen, pero como tienen el mismo color y la misma altura el solape no se nota.
+     */
+    private void dibujarPavimento(float x, float z, List<float[]> franjas) {
         float y = TOPE_CESPED + GROSOR_SENDERO / 2; // Apoyado sobre el césped, apenas elevado.
         float largo = 2 * MITAD_CESPED; // De borde a borde del césped.
-        cubo.caja(x, y, z, largo, GROSOR_SENDERO, ANCHO_SENDERO, COLOR_SENDERO[0], COLOR_SENDERO[1], COLOR_SENDERO[2]); // Sendero oeste-este.
-        cubo.caja(x, y, z, ANCHO_SENDERO, GROSOR_SENDERO, largo, COLOR_SENDERO[0], COLOR_SENDERO[1], COLOR_SENDERO[2]); // Sendero norte-sur (el cruce queda bajo la fuente).
+        float[] c = COLOR_SENDERO;
+        cubo.caja(x, y, z, largo, GROSOR_SENDERO, ANCHO_SENDERO, c[0], c[1], c[2]); // Sendero oeste-este.
+        cubo.caja(x, y, z, ANCHO_SENDERO, GROSOR_SENDERO, largo, c[0], c[1], c[2]); // Sendero norte-sur (el cruce queda bajo la fuente).
+        float ladoPlaza = 2 * MITAD_PLAZA; // Lado de cada cuadrado = 2 · apotema del octógono.
+        cubo.caja(x, y, z, ladoPlaza, GROSOR_SENDERO, ladoPlaza, c[0], c[1], c[2]); // Cuadrado recto de la plaza.
+        cubo.cajaGirada(x, y, z, ladoPlaza, GROSOR_SENDERO, ladoPlaza, c[0], c[1], c[2], (float) (Math.PI / 4)); // Girado 45°: completa el octógono.
+        for (float[] f : franjas) { // {xMin, xMax, zMin, zMax}.
+            cubo.caja((f[0] + f[1]) / 2, y, (f[2] + f[3]) / 2, f[1] - f[0], GROSOR_SENDERO, f[3] - f[2], c[0], c[1], c[2]); // Franja de acceso.
+        }
     }
 
     /** Fuente: base gris, agua azul (levemente emisiva de noche), pilar con plato y chorro. */

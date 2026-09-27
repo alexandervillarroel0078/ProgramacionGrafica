@@ -144,9 +144,7 @@ public class Juego {
         }
 
         if (key == GLFW_KEY_R) { // Comprueba si el usuario quiere comenzar de nuevo.
-            auto.reset(); // Restaura posición, velocidad y orientación del vehículo.
-            entregas.reset(); // Amplía el reinicio del auto: vuelve a la primera parada y al cronómetro en cero.
-            trafico.reset(); // Devuelve cada vehículo autónomo al inicio de su ruta.
+            reiniciar(); // Auto, entregas, tráfico y cámara vuelven al inicio.
         }
 
         if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) { // ENTER del teclado principal o del numérico.
@@ -163,6 +161,14 @@ public class Juego {
 
         iluminacion.tecla(key); // Amplía los controles con N y F; conserva ESC, C y R.
         minimapa.tecla(key); // Amplía las teclas con M; conserva salida, cámara, reinicio y luces.
+    }
+
+    /** Reinicio de la partida (tecla R): auto en la salida, entregas y tráfico al inicio, cámara detrás del auto. */
+    void reiniciar() {
+        auto.reset(); // Restaura posición, velocidad y orientación del vehículo.
+        entregas.reset(); // Amplía el reinicio del auto: vuelve a la primera parada y al cronómetro en cero.
+        trafico.reset(); // Devuelve cada vehículo autónomo al inicio de su ruta.
+        camara.reiniciarSeguimiento(auto.getX(), auto.getZ(), auto.getAngulo()); // Sin barrido desde donde estaba.
     }
 
     // ==================== 4. ACTUALIZACIÓN POR CUADRO ====================
@@ -276,6 +282,11 @@ public class Juego {
     /** Devuelve el auto del jugador. */
     Auto getAuto() {
         return auto; // Vehículo controlado por el usuario.
+    }
+
+    /** Devuelve la cámara. */
+    Camara getCamara() {
+        return camara; // Seguimiento, orbital o aérea.
     }
 
     /** Devuelve el tráfico autónomo. */
