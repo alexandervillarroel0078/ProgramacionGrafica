@@ -1,6 +1,7 @@
 package com.graphics.ciudad.motor; // Agrupa las piezas técnicas: ventana, shaders, geometría y cámara.
 
-import java.util.function.BiConsumer; // Recibe el método que atenderá cada arrastre del mouse (dx, dy).
+import java.util.function.BiConsumer; // Recibe el método que atenderá cada movimiento de mouse-look (dx, dy).
+import java.util.function.BooleanSupplier; // Recibe el método que indica si el modo actual usa mouse-look (ORBITAL/AEREA).
 import java.util.function.DoubleConsumer; // Recibe el método que atenderá cada giro de la ruedita.
 import java.util.function.IntConsumer; // Recibe el método que atenderá cada tecla presionada.
 import org.lwjgl.glfw.Callbacks; // Permite liberar los callbacks de la ventana al cerrar.
@@ -9,11 +10,15 @@ import static org.lwjgl.glfw.GLFW.*; // Importa las funciones y constantes de ve
 import static org.lwjgl.opengl.GL33.*; // Importa las funciones OpenGL hasta la versión 3.3.
 
 /**
- * VENTANA: envoltorio de GLFW para la ventana, el contexto OpenGL y el teclado.
- * Responsable de: crear la ventana y el contexto OpenGL 3.3 Core, registrar el callback de teclado,
- * informar el tamaño real del framebuffer (resize), cambiar el título, presentar cada imagen y destruirse.
- * Se comunica con: Juego, que la crea, le entrega el método tecla() y la consulta en cada vuelta del ciclo;
- * Auto, que lee las teclas mantenidas mediante pulsada(); Camara, que recibe arrastres y ruedita del mouse.
+ * VENTANA: envoltorio de GLFW para la ventana, el contexto OpenGL, el teclado y el mouse.
+ * Responsable de: crear la ventana y el contexto OpenGL 3.3 Core, registrar los callbacks de teclado y mouse
+ * (incluido el mouse-look de las cámaras ORBITAL y AEREA: cursor oculto y capturado, con motion cruda si el sistema
+ * la soporta), informar el tamaño real del framebuffer (resize), cambiar el título, presentar cada imagen y
+ * destruirse.
+ * Se comunica con: Juego, que la crea, le entrega el método tecla() y la consulta en cada vuelta del ciclo (y que
+ * apaga el mouse-look con Esc o al cambiar de modo); Auto, que lee las teclas mantenidas mediante pulsada(); Camara,
+ * que recibe los movimientos de mouse-look (como arrastre o como desplazamiento, según Shift) y la ruedita, y que
+ * le dice (usaMouseLook()) si el modo actual es ORBITAL o AEREA.
  */
 public class Ventana {
 
@@ -22,10 +27,10 @@ public class Ventana {
     private int alto = 760; // Alto inicial de la ventana; después contiene píxeles del framebuffer.
     private final int[] anchoReal = new int[1]; // Reserva espacio para que GLFW escriba el ancho en píxeles.
     private final int[] altoReal = new int[1]; // Reserva espacio para que GLFW escriba el alto en píxeles.
-    private boolean arrastrando = false; // true mientras el botón izquierdo del mouse está presionado.
-    private boolean desplazando = false; // true mientras el botón derecho del mouse está presionado.
-    private double ultimoX; // Última posición X conocida del cursor, en píxeles de la ventana.
+    private double ultimoX; // Última posición X conocida del cursor, en píxeles de la ventana (referencia del mouse-look).
     private double ultimoY; // Última posición Y conocida del cursor (crece hacia abajo).
+    private boolean mouseLookActivo = false; // true mientras ORBITAL o AEREA tienen el cursor oculto y capturado.
+    private boolean saltoPendienteMouseLook = false; // true en el primer evento de cursor tras activar: solo fija la referencia.
 
     /** Configura GLFW y OpenGL, igual que las clases de cámara del proyecto original. */
     public void crear(String titulo, IntConsumer alPresionar) {
@@ -54,39 +59,85 @@ public class Ventana {
 
     /**
      * Registra los callbacks del mouse, igual que el de teclado: GLFW los llama durante procesarEventos().
-     * - Botón: al presionar el izquierdo (o el derecho) empieza un arrastre y se guarda la posición del cursor; al
-     *   soltarlo termina.
-     * - Cursor: mientras dura el arrastre, entrega el movimiento (dx, dy) desde la última posición: a alArrastrar si es
-     *   con el botón izquierdo (girar la cámara) y a alDesplazar si es con el derecho (mover el centro de la aérea).
-     * - Ruedita: entrega a alRodar los pasos verticales (positivo = hacia adelante).
-     * Ventana no decide qué hace cada gesto: se lo pasa a Camara, que lo ignora si el modo actual no lo usa.
-     * Callbacks.glfwFreeCallbacks() los libera al destruir la ventana, junto con el de teclado.
+     * - Botón: solo importa el derecho, y solo si usaMouseLook da true (ORBITAL o AEREA). Al presionarse (no al
+     *   soltarse) alterna el mouse-look: activarMouseLook() u desactivarMouseLookInterno(). El izquierdo no hace
+     *   nada en ningún modo; en SEGUIMIENTO (usaMouseLook da false) ningún botón hace nada.
+     * - Cursor: sin mouse-look activo no hace nada (el mouse no mueve la cámara si no está encendido, y en
+     *   SEGUIMIENTO nunca se enciende). Con mouse-look activo, cada movimiento consulta si Shift (izquierdo o
+     *   derecho) está sostenido y entrega el delta a alDesplazar si lo está, o a alArrastrar si no; Camara decide
+     *   qué hace cada uno según el modo (desplazar() solo actúa en AEREA). El primer evento tras activar solo fija
+     *   la referencia (saltoPendienteMouseLook), para no generar un salto con la posición virtual que GLFW usa en
+     *   modo GLFW_CURSOR_DISABLED.
+     * - Ruedita: entrega a alRodar los pasos verticales (positivo = hacia adelante), en cualquier modo.
+     * - Foco: si la ventana lo pierde, se apaga el mouse-look para no quedar con el cursor capturado en segundo plano.
+     * Ventana no decide qué modo usa cada gesto ni qué efecto tiene: usaMouseLook (Camara::usaMouseLook) solo le
+     * dice si el modo actual es ORBITAL o AEREA, y Shift solo decide a cuál de los dos métodos despachar; el resto
+     * de la semántica sigue en Camara, que ignora lo que el modo actual no usa.
+     * Callbacks.glfwFreeCallbacks() libera todos estos callbacks (y el de teclado) al destruir la ventana.
      */
-    public void configurarMouse(BiConsumer<Double, Double> alArrastrar, BiConsumer<Double, Double> alDesplazar, DoubleConsumer alRodar) {
+    public void configurarMouse(BiConsumer<Double, Double> alArrastrar, BiConsumer<Double, Double> alDesplazar,
+                                 DoubleConsumer alRodar, BooleanSupplier usaMouseLook) {
         glfwSetMouseButtonCallback(ventana, (ventanaEvento, boton, accion, mods) -> { // Botones del mouse.
-            if (boton == GLFW_MOUSE_BUTTON_LEFT || boton == GLFW_MOUSE_BUTTON_RIGHT) { // Los dos botones arrastran.
-                if (boton == GLFW_MOUSE_BUTTON_LEFT) { // Izquierdo: girar.
-                    arrastrando = accion == GLFW_PRESS; // Empieza al presionar y termina al soltar.
-                } else { // Derecho: desplazar.
-                    desplazando = accion == GLFW_PRESS; // Igual que el izquierdo.
+            if (boton == GLFW_MOUSE_BUTTON_RIGHT && accion == GLFW_PRESS && usaMouseLook.getAsBoolean()) { // Solo al presionar.
+                if (mouseLookActivo) {
+                    desactivarMouseLookInterno(); // Vuelve a mostrar el cursor normal.
+                } else {
+                    activarMouseLook(); // Oculta y captura el cursor (y motion cruda, si el sistema la soporta).
                 }
-                double[] cx = new double[1]; // Espacio para la posición X del cursor.
-                double[] cy = new double[1]; // Espacio para la posición Y.
-                glfwGetCursorPos(ventanaEvento, cx, cy); // Posición actual: punto de partida del arrastre.
-                ultimoX = cx[0]; // Guarda X.
-                ultimoY = cy[0]; // Guarda Y.
             }
         }); // Termina el registro del callback de botones.
         glfwSetCursorPosCallback(ventana, (ventanaEvento, px, py) -> { // Movimiento del cursor.
-            if (arrastrando) { // Arrastre con el botón izquierdo.
-                alArrastrar.accept(px - ultimoX, py - ultimoY); // Entrega cuánto se movió desde el último evento.
-            } else if (desplazando) { // Arrastre con el botón derecho.
-                alDesplazar.accept(px - ultimoX, py - ultimoY); // Mismo movimiento, otro gesto.
+            if (!mouseLookActivo) { // Sin mouse-look (incluida siempre SEGUIMIENTO) el mouse no mueve la cámara.
+                return;
             }
-            ultimoX = px; // Actualiza la última posición X.
-            ultimoY = py; // Actualiza la última posición Y.
+            if (saltoPendienteMouseLook) { // Primer evento tras activar: fija la referencia, sin generar un salto.
+                saltoPendienteMouseLook = false;
+            } else {
+                boolean shift = glfwGetKey(ventana, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS // Cualquiera de los dos Shift.
+                    || glfwGetKey(ventana, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+                if (shift) { // Con Shift, Camara interpreta el movimiento como desplazamiento (solo hace algo en AEREA).
+                    alDesplazar.accept(px - ultimoX, py - ultimoY);
+                } else { // Sin Shift, como arrastre: gira y eleva.
+                    alArrastrar.accept(px - ultimoX, py - ultimoY);
+                }
+            }
+            ultimoX = px; // Actualiza la referencia para el próximo evento.
+            ultimoY = py;
         }); // Termina el registro del callback de cursor.
         glfwSetScrollCallback(ventana, (ventanaEvento, dx, dy) -> alRodar.accept(dy)); // Ruedita: pasos verticales.
+        glfwSetWindowFocusCallback(ventana, (ventanaEvento, enfocada) -> { // Pierde el foco (Alt-Tab, otra ventana).
+            if (!enfocada) { // Evita quedar con el cursor oculto y capturado en segundo plano.
+                desactivarMouseLook();
+            }
+        }); // Termina el registro del callback de foco.
+    }
+
+    /** Activa el mouse-look: oculta y captura el cursor, con motion cruda si el sistema la soporta. */
+    private void activarMouseLook() {
+        mouseLookActivo = true; // El cursorPosCallback pasa a entregar cada movimiento a alArrastrar.
+        saltoPendienteMouseLook = true; // El próximo evento de cursor solo fija la referencia (ver cursorPosCallback).
+        glfwSetInputMode(ventana, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // Oculta el cursor y lo deja virtual/ilimitado.
+        if (glfwRawMouseMotionSupported()) { // No todos los sistemas la soportan.
+            glfwSetInputMode(ventana, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE); // Movimiento sin aceleración ni escalado del SO.
+        }
+    }
+
+    /** Apaga el mouse-look sin comprobar si estaba activo; la llaman el toggle y desactivarMouseLook(), que ya lo saben. */
+    private void desactivarMouseLookInterno() {
+        mouseLookActivo = false; // El cursorPosCallback deja de entregar el movimiento a alArrastrar.
+        glfwSetInputMode(ventana, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // Vuelve a mostrar el cursor normal.
+    }
+
+    /** Apaga el mouse-look si estaba activo; lo llaman Juego (Esc, o al cambiar de modo con C) y el callback de foco. */
+    public void desactivarMouseLook() {
+        if (mouseLookActivo) { // Evita tocar GLFW si ya estaba apagado.
+            desactivarMouseLookInterno();
+        }
+    }
+
+    /** Indica si el mouse-look (ORBITAL o AEREA) está activo; Juego lo consulta para que Esc lo apague en vez de cerrar. */
+    public boolean mouseLookActivo() {
+        return mouseLookActivo;
     }
 
     /** Indica si el usuario o el programa solicitaron cerrar la ventana. */

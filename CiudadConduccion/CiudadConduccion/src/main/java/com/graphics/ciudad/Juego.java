@@ -88,7 +88,7 @@ public class Juego {
     /** Crea la ventana, compila los shaders y sube el cubo a la GPU. */
     private void iniciar() {
         ventana.crear(NOMBRE_JUEGO, this::tecla); // Crea la ventana y entrega cada tecla presionada a tecla().
-        ventana.configurarMouse(camara::arrastrar, camara::desplazar, camara::zoom); // El mouse maneja la orbital del auto y la aérea.
+        ventana.configurarMouse(camara::arrastrar, camara::desplazar, camara::zoom, camara::usaMouseLook); // Orbital y aérea: mouse-look (click derecho) + Shift para desplazar en aérea.
         shader.crear(SHADER_VERTICES, SHADER_FRAGMENTOS); // Compila y enlaza los shaders que transforman y colorean los vértices.
         cubo.crear(); // Guarda en la GPU el cubo que servirá para todos los objetos.
         figuras.crear(); // Sube a la GPU la esfera, el cilindro y el cono.
@@ -136,11 +136,16 @@ public class Juego {
     private void tecla(int key) {
         // Antes cada clase sustituía tecla() y conservaba las acciones anteriores mediante super; aquí están todas juntas.
         if (key == GLFW_KEY_ESCAPE) { // Comprueba si se presionó ESC.
-            ventana.cerrar(); // Solicita terminar el ciclo principal.
+            if (ventana.mouseLookActivo()) { // Con el mouse-look activo (ORBITAL o AEREA), Esc lo apaga en vez de cerrar.
+                ventana.desactivarMouseLook();
+            } else {
+                ventana.cerrar(); // Solicita terminar el ciclo principal.
+            }
         }
 
         if (key == GLFW_KEY_C) { // Comprueba si se presionó la tecla de cámara.
             camara.alternar(); // Invierte el modo de cámara actual.
+            ventana.desactivarMouseLook(); // Se apaga siempre: evita saltos al pasar ORBITAL↔AEREA con el cursor capturado.
         }
 
         if (key == GLFW_KEY_R) { // Comprueba si el usuario quiere comenzar de nuevo.

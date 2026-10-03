@@ -14,10 +14,16 @@ import static org.lwjgl.glfw.GLFW.*; // Permite consultar las flechas que orbita
  *    φ entre ELEVACION_MIN y ELEVACION_MAX, D entre DISTANCIA_MIN y DISTANCIA_MAX. Se puede seguir manejando.
  *  - AÉREA: el centro es un punto de la ciudad (al entrar, el origen). φ entre ELEVACION_AEREA_MIN y
  *    ELEVACION_AEREA_MAX, D entre DISTANCIA_AEREA_MIN y DISTANCIA_AEREA_MAX (con la máxima se ve toda la ciudad).
- *    Además, arrastrar con el botón derecho desplaza el centro, que nunca sale de ±límite de la ciudad.
- *    Al entrar al modo la cámara vuelve a la vista general de siempre (la de las capturas).
- * Mouse: arrastrar con el botón izquierdo = girar y elevar; ruedita = acercar y alejar; botón derecho = desplazar
- * (solo en la aérea). En la cámara de seguimiento el mouse no hace nada.
+ *    Mantiene además un centro (centroX, centroZ) que nunca sale de ±límite de la ciudad; Shift lo desplaza en vez
+ *    de orbitar (ver Mouse, abajo). Al entrar al modo la cámara vuelve a la vista general de siempre (las capturas).
+ * Mouse (ORBITAL y AEREA, usaMouseLook() da true en ambas): click derecho activa/desactiva el MOUSE-LOOK (Ventana
+ * oculta y captura el cursor, con motion cruda si el sistema la soporta); el botón izquierdo no hace nada. Con el
+ * modo activo, mover el mouse sin presionar nada gira y eleva (arrastrar()); en AEREA, sosteniendo Shift (izquierdo
+ * o derecho) el mismo movimiento desplaza el centro (desplazar()) en vez de orbitar — en ORBITAL, Shift no hace
+ * nada porque desplazar() solo actúa en AEREA. La ruedita siempre acerca y aleja (zoom()), con o sin mouse-look. En
+ * la cámara de seguimiento el mouse no hace nada (usaMouseLook() da false). Esc con el mouse-look activo lo apaga
+ * en vez de cerrar la ventana; Ventana también lo apaga si la ventana pierde el foco o si Juego cambia de modo con
+ * C (incluido ORBITAL↔AEREA, para no arrastrar el estado de un centro al otro).
  * SEGUIMIENTO: detrás del auto, con su ángulo suavizado, mirando a un punto por delante de él con una inclinación fija.
  * Se acerca al auto cuando el punto de detrás cae sobre una manzana o fuera de la ciudad (ver distanciaLibre()), y
  * vuelve a su distancia de a poco.
@@ -138,6 +144,11 @@ public class Camara {
         return modo == Modo.AEREA; // La flecha no hace falta en seguimiento ni en la orbital del auto.
     }
 
+    /** Indica si el modo actual se maneja con mouse-look (click derecho activa/desactiva): ORBITAL y AEREA. */
+    public boolean usaMouseLook() {
+        return modo == Modo.ORBITAL || modo == Modo.AEREA; // Ventana lo consulta para decidir qué hace el botón derecho.
+    }
+
     /** Pasa al siguiente modo: seguimiento → orbital del auto → aérea → seguimiento; Juego lo llama al presionar C. */
     public void alternar() {
         modo = Modo.values()[(modo.ordinal() + 1) % Modo.values().length]; // Avanza en el orden del enum y vuelve al inicio.
@@ -180,8 +191,9 @@ public class Camara {
     }
 
     /**
-     * Arrastre del mouse con el botón izquierdo, en píxeles (dx a la derecha, dy hacia abajo). En la orbital y en la
-     * aérea, mover a la derecha gira la cámara alrededor de su centro y mover hacia arriba la eleva.
+     * Movimiento del mouse con mouse-look activo, en píxeles (dx a la derecha, dy hacia abajo). En la orbital y en la
+     * aérea, mover a la derecha gira la cámara alrededor de su centro y mover hacia arriba la eleva. En la aérea,
+     * Ventana lo redirige a desplazar() en vez de a este método mientras se sostiene Shift.
      */
     public void arrastrar(double dx, double dy) {
         Orbita orbita = orbitaActiva(); // La cámara que corresponde.
@@ -202,10 +214,11 @@ public class Camara {
     }
 
     /**
-     * Arrastre con el botón derecho, en píxeles: solo en la aérea, desplaza el punto que mira la cámara como si se
-     * arrastrara el suelo con la mano (el suelo sigue al cursor). Se mueve en los ejes de la pantalla proyectados al
-     * suelo: la derecha de la cámara es (cos θ, -sen θ) y su frente, (-sen θ, -cos θ). Cuanto más lejos está la
-     * cámara, más avanza por píxel. El centro nunca sale de ±límite: la vista no se va al vacío.
+     * Movimiento del mouse con mouse-look activo y Shift sostenido, en píxeles: solo en la aérea, desplaza el punto
+     * que mira la cámara como si se arrastrara el suelo con la mano (el suelo sigue al cursor). Se mueve en los ejes
+     * de la pantalla proyectados al suelo: la derecha de la cámara es (cos θ, -sen θ) y su frente, (-sen θ, -cos θ).
+     * Cuanto más lejos está la cámara, más avanza por píxel. El centro nunca sale de ±límite: la vista no se va al
+     * vacío. En ORBITAL, Ventana igual puede llamarlo con Shift sostenido; se ignora porque el modo no es AEREA.
      */
     public void desplazar(double dx, double dy) {
         if (modo != Modo.AEREA) { // En los otros modos el botón derecho no hace nada.
